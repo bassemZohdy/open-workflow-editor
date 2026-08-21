@@ -71,7 +71,7 @@ function EditorCanvas({
       }
       setNodes((current) => applyNodeChanges(changes, current));
     },
-    [setNodes, setPositions],
+    [setDirty, setNodes, setPositions],
   );
 
   const onEdgesChange = useCallback(

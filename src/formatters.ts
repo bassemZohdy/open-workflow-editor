@@ -59,7 +59,9 @@ function objectToCatalogEntries(value: unknown): CatalogEntry[] {
   return Object.entries(value as Record<string, unknown>).map(([name, catalog]) => ({
     name,
     endpoint:
-      catalog && typeof catalog === 'object' && typeof (catalog as { endpoint?: unknown }).endpoint === 'string'
+      catalog &&
+      typeof catalog === 'object' &&
+      typeof (catalog as { endpoint?: unknown }).endpoint === 'string'
         ? (catalog as { endpoint: string }).endpoint
         : '',
   }));
@@ -67,7 +69,9 @@ function objectToCatalogEntries(value: unknown): CatalogEntry[] {
 
 function formatGraphIssues(document: WorkflowDocument): string {
   const issues = validateGraph(document);
-  return issues.length ? issues.map((issue: { path: string; message: string }) => `${issue.path} — ${issue.message}`).join('\n') : '';
+  return issues.length
+    ? issues.map((issue: { path: string; message: string }) => `${issue.path} — ${issue.message}`).join('\n')
+    : '';
 }
 
 function validationTitle(message: string): string {
@@ -78,4 +82,11 @@ function validationTitle(message: string): string {
   return 'Specification needs attention';
 }
 
-export { formatError, formatJsonInput, objectToPairs, objectToCatalogEntries, formatGraphIssues, validationTitle };
+export {
+  formatError,
+  formatJsonInput,
+  objectToPairs,
+  objectToCatalogEntries,
+  formatGraphIssues,
+  validationTitle,
+};

@@ -7,7 +7,11 @@ import {
 import { formatError, formatJsonInput, objectToPairs, objectToCatalogEntries } from '../../formatters';
 import { taskColors } from '../../taskMeta';
 import { validateJavaScriptFunction } from '../../scriptContract';
-import { JsonObjectBuilder, objectToJsonBuilderEntries, jsonBuilderEntriesToObject } from '../common/JsonObjectBuilder';
+import {
+  JsonObjectBuilder,
+  objectToJsonBuilderEntries,
+  jsonBuilderEntriesToObject,
+} from '../common/JsonObjectBuilder';
 import { DurationField } from '../common/DurationField';
 import { KeyValuePairs, pairsToObject } from '../common/KeyValuePairs';
 
@@ -116,11 +120,17 @@ function Inspector({ selected, document, onDocumentChange, onRequestDelete, coll
     setMetadataEntries(objectToJsonBuilderEntries(selected?.task.metadata));
     setNestedTasks(selected?.type === 'do' ? JSON.stringify(selected.task.do || [], null, 2) : '[]');
     setFieldError('');
+    // Form state intentionally resets on selection change only (tracked via
+    // selectedSignature), not on every document edit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSignature]);
 
   const catalogSignature = JSON.stringify(document?.use?.catalogs || {});
   useEffect(() => {
     setCatalogEntries(objectToCatalogEntries(document?.use?.catalogs));
+    // Catalog form state resets when the catalog shape changes, not when the
+    // parent document object identity changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [catalogSignature]);
 
   if (!selected)

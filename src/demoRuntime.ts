@@ -72,17 +72,17 @@ function taskEntries(taskList: TaskItem[] = []): Array<{ name: string; definitio
 function readPath(value: unknown, path: string): unknown {
   return path
     .split('.')
-    .reduce<unknown>(
-      (current, key) => (current as Record<string, unknown> | undefined | null)?.[key],
-      value,
-    );
+    .reduce<unknown>((current, key) => (current as Record<string, unknown> | undefined | null)?.[key], value);
 }
 
 function evaluateValue(value: unknown, context: { context: unknown; input: unknown }): unknown {
   if (Array.isArray(value)) return value.map((item) => evaluateValue(item, context));
   if (value && typeof value === 'object') {
     return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, evaluateValue(item, context)]),
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+        key,
+        evaluateValue(item, context),
+      ]),
     );
   }
   if (typeof value !== 'string') return value;
@@ -283,7 +283,11 @@ async function executeTask(
       const [branchName, branchTask] = Object.entries(branch || {})[0] || [];
       addLog(run, `Starting fork branch ${scope}${name}/${branchName}`);
       const branchTasks = branchTask?.do ? branchTask.do : [{ [branchName]: branchTask }];
-      await executeTaskList((branchTasks as TaskItem[]).filter(Boolean), run, `${scope}${name}/${branchName}/`);
+      await executeTaskList(
+        (branchTasks as TaskItem[]).filter(Boolean),
+        run,
+        `${scope}${name}/${branchName}/`,
+      );
     }
     return { output: { demo: true, branches: branches.length }, next: definition.then };
   }

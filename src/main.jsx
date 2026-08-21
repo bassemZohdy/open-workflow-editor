@@ -26,11 +26,7 @@ import {
   uniqueWorkflowName,
   upsertWorkflowRecord,
 } from './workflowStore';
-import {
-  formatError,
-  formatGraphIssues,
-  validationTitle,
-} from './formatters';
+import { formatError, formatGraphIssues, validationTitle } from './formatters';
 import { RuntimePanel } from './components/runtime';
 import { Palette, ConfirmDialog } from './components/layout';
 import { EditorCanvas } from './components/canvas';
@@ -121,7 +117,7 @@ function App() {
       return parseWorkflow(SAMPLE_WORKFLOW);
     }
   }, [initialRecord]);
-  const initialPositions = initialRecord?.positions || {};
+  const initialPositions = useMemo(() => initialRecord?.positions || {}, [initialRecord]);
   const initialWorkflowId = initialRecord?.id || 'workflow-default';
   const [workflowRecords, setWorkflowRecords] = useState(initialLibrary);
   const [workflowId, setWorkflowId] = useState(initialWorkflowId);

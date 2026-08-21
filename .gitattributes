@@ -1,0 +1,4 @@
+# Normalize all text files to LF in the repository and on checkout so the
+# working tree matches Prettier output and stays consistent across platforms
+# (Windows dev machines and Linux CI runners).
+* text=auto eol=lf

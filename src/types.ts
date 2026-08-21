@@ -10,18 +10,7 @@
 
 /** The twelve Open Workflow Specification task types the editor supports. */
 export type TaskType =
-  | 'set'
-  | 'call'
-  | 'switch'
-  | 'do'
-  | 'for'
-  | 'fork'
-  | 'emit'
-  | 'listen'
-  | 'raise'
-  | 'run'
-  | 'try'
-  | 'wait';
+  'set' | 'call' | 'switch' | 'do' | 'for' | 'fork' | 'emit' | 'listen' | 'raise' | 'run' | 'try' | 'wait';
 
 /** Accent color tokens used by palette items and canvas nodes. */
 export type TaskColor =

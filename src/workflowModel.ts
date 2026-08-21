@@ -427,7 +427,9 @@ export function createFlowGraph(document: WorkflowDocument, positions: CanvasPos
   );
   const graphNodeIds = new Set(graphNodes.map((node) => node.id));
   let taskIndex = 0;
-  const tasks = graphNodes.filter((node) => node.type !== GraphNodeType.Start && node.type !== GraphNodeType.End);
+  const tasks = graphNodes.filter(
+    (node) => node.type !== GraphNodeType.Start && node.type !== GraphNodeType.End,
+  );
   const taskCount = tasks.length;
   const defaultTaskGap = 50;
 
@@ -546,7 +548,10 @@ export async function autoLayoutFlow(document: WorkflowDocument): Promise<Canvas
   });
 
   return Object.fromEntries(
-    (layout.children || []).map((node): [string, CanvasPosition] => [node.id, { x: node.x || 0, y: node.y || 0 }]),
+    (layout.children || []).map((node): [string, CanvasPosition] => [
+      node.id,
+      { x: node.x || 0, y: node.y || 0 },
+    ]),
   );
 }
 

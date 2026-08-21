@@ -86,7 +86,12 @@ export function createHttpRuntimeAdapter({
   const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
   if (typeof fetchImpl !== 'function') throw new TypeError('A fetch implementation is required.');
 
-  const request = async (operation: string, path: string, method = 'GET', body?: unknown): Promise<unknown> => {
+  const request = async (
+    operation: string,
+    path: string,
+    method = 'GET',
+    body?: unknown,
+  ): Promise<unknown> => {
     const response = await fetchImpl(`${normalizedBaseUrl}${path}`, {
       method,
       headers: {
