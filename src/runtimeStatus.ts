@@ -1,32 +1,66 @@
-function runtimeRunId(result) {
+/** A run-shaped result from either runtime adapter (demo or gateway). */
+export interface RuntimeResultLike {
+  runId?: string;
+  id?: string;
+  instanceId?: string;
+  workflowInstanceId?: string;
+  status?: string;
+  state?: string;
+  phase?: string;
+}
+
+export interface RuntimeLogEntry {
+  id: string;
+  timestamp: string;
+  summary: string;
+  detail: string;
+  raw: string;
+}
+
+interface SandboxResponse {
+  ok?: boolean;
+  error?: string;
+  result?: unknown;
+}
+
+function runtimeRunId(result: RuntimeResultLike | undefined | null): string {
   return result?.runId || result?.id || result?.instanceId || result?.workflowInstanceId || '';
 }
 
-function runtimeState(result) {
+function runtimeState(result: RuntimeResultLike | undefined | null): string {
   return String(result?.status || result?.state || result?.phase || 'unknown').toLowerCase();
 }
 
-function isTerminalRuntimeState(state) {
-  return ['completed', 'complete', 'failed', 'failure', 'error', 'aborted', 'cancelled', 'canceled'].includes(
-    state,
-  );
+const TERMINAL_RUNTIME_STATES = [
+  'completed',
+  'complete',
+  'failed',
+  'failure',
+  'error',
+  'aborted',
+  'cancelled',
+  'canceled',
+];
+
+function isTerminalRuntimeState(state: string): boolean {
+  return TERMINAL_RUNTIME_STATES.includes(state);
 }
 
-function isActiveRuntimeState(state) {
+function isActiveRuntimeState(state: string): boolean {
   return ['queued', 'pending', 'starting', 'running', 'in_progress', 'in-progress'].includes(state);
 }
 
-function formatRuntimeDuration(milliseconds) {
+function formatRuntimeDuration(milliseconds: number): string {
   if (!Number.isFinite(milliseconds)) return '—';
   if (milliseconds < 1000) return `${Math.max(0, Math.round(milliseconds))} ms`;
   return `${(milliseconds / 1000).toFixed(1)} s`;
 }
 
-function runtimeLogCount(logs) {
+function runtimeLogCount(logs: string): number {
   return logs ? logs.split('\n').filter(Boolean).length : 0;
 }
 
-function parseRuntimeLogs(logs) {
+function parseRuntimeLogs(logs: string): RuntimeLogEntry[] {
   return String(logs || '')
     .split('\n')
     .filter(Boolean)
@@ -45,13 +79,13 @@ function parseRuntimeLogs(logs) {
     });
 }
 
-async function executeNodeSandboxScript(payload) {
+async function executeNodeSandboxScript(payload: unknown): Promise<unknown> {
   const response = await fetch('/api/sandbox/javascript', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  const result = await response.json().catch(() => ({}));
+  const result: SandboxResponse = await response.json().catch(() => ({}));
   if (!response.ok || !result.ok) {
     throw new Error(result.error || `Node sandbox failed (${response.status}).`);
   }

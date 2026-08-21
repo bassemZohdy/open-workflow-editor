@@ -1,4 +1,14 @@
-const paletteItems = [
+import type { TaskColor, TaskType } from './types';
+
+export interface PaletteItem {
+  type: TaskType;
+  label: string;
+  description: string;
+  icon: string;
+  color: TaskColor;
+}
+
+const paletteItems: PaletteItem[] = [
   { type: 'set', label: 'Set value', description: 'Write data to context', icon: '↳', color: 'blue' },
   { type: 'call', label: 'Call HTTP', description: 'Invoke an HTTP endpoint', icon: '↗', color: 'violet' },
   { type: 'switch', label: 'Switch', description: 'Branch on a condition', icon: '◇', color: 'amber' },
@@ -19,7 +29,7 @@ const paletteItems = [
   { type: 'wait', label: 'Wait', description: 'Pause for a duration', icon: '◷', color: 'purple' },
 ];
 
-const taskColors = {
+const taskColors: Record<TaskType, TaskColor> = {
   set: 'blue',
   call: 'violet',
   switch: 'amber',
@@ -34,7 +44,7 @@ const taskColors = {
   wait: 'purple',
 };
 
-const taskSubtitles = {
+const taskSubtitles: Record<TaskType, string> = {
   set: 'Set values',
   call: 'HTTP call',
   switch: 'Conditional branch',

@@ -1,10 +1,15 @@
+export interface JavaScriptValidationResult {
+  valid: boolean;
+  message?: string;
+}
+
 export const DEFAULT_JAVASCRIPT_TASK = `({ input, context, catalogs }) => ({
   renewed: true,
   reference: input.reference || context.nolTagId,
   catalog: Object.keys(catalogs || {})[0] || 'none',
 })`;
 
-export function validateJavaScriptFunction(source) {
+export function validateJavaScriptFunction(source: unknown): JavaScriptValidationResult {
   const code = String(source || '').trim();
   if (!code) return { valid: false, message: 'JavaScript function is required.' };
 
@@ -23,7 +28,10 @@ export function validateJavaScriptFunction(source) {
       return { valid: false, message: 'The JavaScript task must evaluate to a function.' };
     }
   } catch (error) {
-    return { valid: false, message: `JavaScript syntax error: ${error.message}` };
+    return {
+      valid: false,
+      message: `JavaScript syntax error: ${error instanceof Error ? error.message : String(error)}`,
+    };
   }
   return { valid: true };
 }

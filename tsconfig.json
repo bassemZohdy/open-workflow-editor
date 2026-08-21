@@ -7,7 +7,7 @@
     "moduleResolution": "Bundler",
     "target": "ES2022",
     "jsx": "react-jsx",
-    "strict": false,
+    "strict": true,
     "skipLibCheck": true
   },
   "include": ["src", "server", "vite.config.js", "vitest.config.js", "playwright.config.js"]
