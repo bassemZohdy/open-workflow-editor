@@ -9,13 +9,15 @@ Build a real, production-ready Open Workflow Specification authoring and simulat
 ## Complete Project Review
 
 ### 1. Architecture & Foundation
+
 - **Canvas Projection (`@xyflow/react` + ELK.js):** Canvas uses React Flow with customized node types (`WorkflowNode`, `PortNode`), smoothstep edge routing, auto-layout with layer-sweep minimization, and manual drag-to-reposition capabilities.
 - **Specification Engine (`@openworkflowspec/sdk` + `js-yaml`):** The Open Workflow SDK validates documents against specification version `1.0.3` and generates the flat semantic graph. Due to SDK serializer constraints, `js-yaml` is utilized for clean YAML emission.
-- **Persistence & Store (`src/workflowStore.js`):** Versioned envelope storage in `localStorage` supporting a multi-workflow library with rename, duplicate, delete, and optimistic save state transitions (`saving` → `saved` / `error`). Canvas positions are decoupled from the Open Workflow specification document.
-- **Runtime Separation (`src/runtimeAdapter.js` & `src/demoRuntime.js`):** Strict boundary between the local deterministic browser demo simulation (`DEMO`) and external production runtime gateway (`GATEWAY`).
+- **Persistence & Store (`src/workflowStore.ts`):** Versioned envelope storage in `localStorage` supporting a multi-workflow library with rename, duplicate, delete, and optimistic save state transitions (`saving` → `saved` / `error`). Canvas positions are decoupled from the Open Workflow specification document.
+- **Runtime Separation (`src/runtimeAdapter.ts` & `src/demoRuntime.ts`):** Strict boundary between the local deterministic browser demo simulation (`DEMO`) and external production runtime gateway (`GATEWAY`).
 - **Development Sandbox (`server/javascriptSandbox.js`):** Isolated worker thread running Node `vm` with strict memory/byte/timeout bounds to execute inline JavaScript functions (`run.script`) safely during local demo runs.
 
 ### 2. Implemented Features & Verification
+
 - **12 Task Types Supported:** `set`, `call`, `switch`, `do`, `for`, `fork`, `emit`, `listen`, `raise`, `run`, `try`, `wait`.
 - **Property Inspector:** Task-specific visual editors for `set`, `call`, `switch`, `wait`, `emit`, `raise`, `do`, and `run` (JavaScript & sub-flows), plus shared options (`if`, `then`, `timeout`, `input`, `output`, `export`, `metadata`) and a typed JSON Object Builder.
 - **Specification Sync:** Bidirectional live synchronization between visual canvas and code view (YAML/JSON) with error boundary preservation.
@@ -23,11 +25,12 @@ Build a real, production-ready Open Workflow Specification authoring and simulat
 - **Test Coverage:** Vitest unit suite (23 tests passing) and Playwright browser integration suite for drag/drop, properties, auto-layout, focus mode, and undo/redo.
 
 ### 3. Identified Technical Debt & Gaps
-- **Monolithic UI Component (resolved in Phase 10.1):** `src/main.jsx` was reduced from ~3,074 lines to ~900 lines (App shell + persistence). UI now lives in `src/components/{common,canvas,inspector,runtime,layout}/` with shared helpers in `src/taskMeta.js`, `src/formatters.js`, and `src/runtimeStatus.js`.
+
+- **Monolithic UI Component (resolved in Phase 10.1):** `src/main.jsx` was reduced from ~3,074 lines to ~900 lines (App shell + persistence). UI now lives in `src/components/{common,canvas,inspector,runtime,layout}/` with shared helpers in `src/taskMeta.ts`, `src/formatters.ts`, and `src/runtimeStatus.ts`.
 - **Inspector Form Completeness:** `for`, `fork`, `listen`, and `try/catch` tasks currently rely on raw JSON/text or nested lists rather than dedicated visual form builders.
 - **Canvas Sub-Graph Visual Editing:** Nested container tasks (`do`, `for.do`, `fork.branches`, `try`) are represented as flat/grouped nodes without direct visual drag-into-container canvas interaction.
-- **TypeScript Strictness:** Codebase uses `.jsx` and `.js` with `tsconfig.json` set to `noEmit`. Full static typing for Workflow AST and React Flow nodes is needed.
-- **Formatting Consistency:** Prettier formatting check reports styling differences across files.
+- **TypeScript Strictness (largely resolved in Phase 10.2):** All non-React modules are strictly typed with `strict: true`. Remaining `.jsx` components and the test file convert best alongside the Phase 12.1 Inspector decomposition.
+- **Formatting Consistency (resolved in Phase 15.1):** Prettier formatting is applied repo-wide, `format:check` passes, and both Prettier and ESLint (including react-hooks rules) run in CI.
 - **Production Runtime Gateway:** Java SDK reference gateway service is defined by contract and security specifications, but deployment integration remains open.
 
 ---
@@ -50,6 +53,7 @@ Build a real, production-ready Open Workflow Specification authoring and simulat
 ## Actionable Backlog & Future Tasks
 
 ### Phase 10 — Code Architecture & Modularization
+
 - [x] **10.1 Refactor Monolithic `src/main.jsx` into Modular Components** (`main.jsx`: 3,073 → 897 lines; verified by unit, lint, and 18 browser tests):
   - [x] Extract reusable form controls (`JsonObjectBuilder`, `DurationField`, `KeyValuePairs`) to `src/components/common/`.
   - [x] Extract canvas components (`WorkflowNode`, `PortNode`, `EditorCanvas`) to `src/components/canvas/`.
@@ -65,6 +69,7 @@ Build a real, production-ready Open Workflow Specification authoring and simulat
   - [x] Optimize chunk splitting in `vite.config.js` for vendor libraries (`react`/`react-dom`, `@xyflow/react`, `@openworkflowspec/sdk` + `js-yaml`): eager bundle reduced 777 KB → 90 KB; elkjs stays a lazy standalone chunk.
 
 ### Phase 11 — Canvas & Visual Authoring Enhancements
+
 - [ ] **11.1 Hierarchical & Nested Canvas Authoring:**
   - [ ] Implement nested visual container frames for `do`, `for.do`, `fork.branches`, and `try`/`catch` blocks on the canvas.
   - [ ] Support dragging tasks from palette directly into nested container drop zones.
@@ -78,6 +83,7 @@ Build a real, production-ready Open Workflow Specification authoring and simulat
   - [ ] Add workflow simulation path highlighting and exportable execution trace diagrams.
 
 ### Phase 12 — Inspector & Schema Completeness
+
 - [ ] **12.1 Dedicated Task Inspectors for Remaining Task Types:**
   - [ ] **`for` Inspector:** Visual builder for `each` item variable, `in` collection expression, and nested task list.
   - [ ] **`fork` Inspector:** Visual parallel branch manager (add/remove branches, set branch names, configure branch tasks).
@@ -91,9 +97,10 @@ Build a real, production-ready Open Workflow Specification authoring and simulat
   - [ ] Enable recursive nested objects/arrays in `JsonObjectBuilder` without falling back to raw JSON text.
 
 ### Phase 13 — Production Runtime Gateway & Sandbox Hardening
+
 - [ ] **13.1 Java SDK Reference Runtime Gateway Service:**
   - [ ] Build server-side gateway wrapping the Open Workflow Specification Java SDK (7.x line).
-  - [ ] Implement authenticated `/validate`, `/runs`, `/runs/{id}`, `/runs/{id}/cancel`, and `/runs/{id}/logs` endpoints matching `src/runtimeAdapter.js`.
+  - [ ] Implement authenticated `/validate`, `/runs`, `/runs/{id}`, `/runs/{id}/cancel`, and `/runs/{id}/logs` endpoints matching `src/runtimeAdapter.ts`.
   - [ ] Implement secure credential resolution, upstream endpoint allowlists, and tenant-scoped audit logging.
 - [ ] **13.2 Expression Engine Conformance:**
   - [ ] Align demo runtime expression evaluator with full Open Workflow Specification runtime expression specification (JSONata / JQ / logical operators).
@@ -102,8 +109,9 @@ Build a real, production-ready Open Workflow Specification authoring and simulat
   - [ ] Implement execution timeouts, memory ceilings, and per-tenant rate limiting.
 
 ### Phase 14 — Persistence, Collaboration & Ecosystem
+
 - [ ] **14.1 Remote API Persistence Adapter:**
-  - [ ] Implement REST / GraphQL persistence adapter conforming to `src/workflowStore.js` `assertWorkflowPersistence`.
+  - [ ] Implement REST / GraphQL persistence adapter conforming to `src/workflowStore.ts` `assertWorkflowPersistence`.
   - [ ] Add optimistic concurrency control, conflict resolution dialog, and configurable auto-save.
 - [ ] **14.2 Version Control & Visual Workflow Diffing:**
   - [ ] Track workflow revision history with author metadata, timestamps, and commit messages.
@@ -113,13 +121,14 @@ Build a real, production-ready Open Workflow Specification authoring and simulat
   - [ ] Add interactive OpenAPI / AsyncAPI import to register endpoints into `use.catalogs`.
 
 ### Phase 15 — Quality, Accessibility & Performance
-- [ ] **15.1 Code Formatting & Linting Pipeline:**
-  - [ ] Format all codebase files with Prettier (`npm run format`) and ensure `npm run format:check` passes in CI.
-  - [ ] Configure ESLint rules for React Hooks (`react-hooks/rules-of-hooks`, `react-hooks/exhaustive-deps`).
+
+- [x] **15.1 Code Formatting & Linting Pipeline:**
+  - [x] Format all codebase files with Prettier (`npm run format`); `npm run format:check` passes and runs in CI.
+  - [x] Configure ESLint rules for React Hooks (`react-hooks/rules-of-hooks` as error, `react-hooks/exhaustive-deps` as warning) and resolve all findings.
+  - [x] Add GitHub Actions CI (`.github/workflows/ci.yml`): lint, format check, typecheck, unit tests, build, and Playwright browser tests on every push/PR.
 - [ ] **15.2 Accessibility Hardening (WCAG 2.1 AA):**
   - [ ] Ensure full keyboard navigation across canvas nodes, ports, edge connections, and property panels.
   - [ ] Implement high-contrast theme and dark mode support.
 - [ ] **15.3 Test Suite Expansion:**
   - [ ] Add unit tests for all remaining task inspectors (`for`, `fork`, `listen`, `try`).
   - [ ] Add Playwright browser tests covering undo/redo with auto-layout, subflow creation, and multi-file import/export workflows.
-
