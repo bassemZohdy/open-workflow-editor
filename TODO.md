@@ -57,9 +57,9 @@ Build a real, production-ready Open Workflow Specification authoring and simulat
   - [x] Extract runtime panel and log components (`RuntimePanel`, `RuntimeLogList`) to `src/components/runtime/`.
   - [x] Extract layout components (`Palette`, `ConfirmDialog`) to `src/components/layout/`. Note: top bar / workspace header markup remains inline in `App` (no standalone components existed to extract).
 - [ ] **10.2 TypeScript Migration:**
-  - [ ] Convert `.js`/`.jsx` files to `.ts`/`.tsx`.
-  - [ ] Define comprehensive TypeScript interfaces for Open Workflow AST, graph models, and editor store state.
-  - [ ] Enable strict type-checking in `tsconfig.json`.
+  - [~] Convert `.js`/`.jsx` files to `.ts`/`.tsx` (staged): all non-React modules are done — `types`, `scriptContract`, `taskMeta`, `formatters`, `runtimeStatus`, `workflowStore`, `workflowModel`, `runtimeAdapter`, `demoRuntime`, fixture. Remaining: React components (`.jsx`) and `workflowModel.test.js`, best converted alongside the Phase 12.1 Inspector decomposition.
+  - [x] Define comprehensive TypeScript interfaces for Open Workflow AST, graph models, and editor store state (`src/types.ts`: `TaskDefinition`, `WorkflowDocument`, `FlowGraph`/`FlowNode`/`FlowEdge`, `WorkflowRecord`, `CanvasPositions`, `WorkflowPersistence`, `SaveState`; SDK interop typed via `GraphNodeType` and derived `SdkWorkflow`).
+  - [x] Enable strict type-checking in `tsconfig.json` (`strict: true`, `checkJs: false` so unconverted files stay incremental; `tsc --noEmit` clean).
 - [x] **10.3 Bundle & Performance Optimization:**
   - [x] Lazy load `elkjs/lib/elk.bundled.js` with dynamic `import()` (verified: `workflowModel.getElk` uses a cached dynamic import; `index.html` carries no eager reference).
   - [x] Optimize chunk splitting in `vite.config.js` for vendor libraries (`react`/`react-dom`, `@xyflow/react`, `@openworkflowspec/sdk` + `js-yaml`): eager bundle reduced 777 KB → 90 KB; elkjs stays a lazy standalone chunk.
