@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "target": "ES2022",
+    "jsx": "react-jsx",
+    "strict": false,
+    "skipLibCheck": true
+  },
+  "include": ["src", "server", "vite.config.js", "vitest.config.js", "playwright.config.js"]
+}
