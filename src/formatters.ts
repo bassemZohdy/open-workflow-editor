@@ -1,4 +1,5 @@
 import { validateGraph } from './workflowModel';
+import type { WorkflowDocument } from './types';
 
 interface SchemaErrorItem {
   instancePath?: string;
@@ -64,7 +65,7 @@ function objectToCatalogEntries(value: unknown): CatalogEntry[] {
   }));
 }
 
-function formatGraphIssues(document: unknown): string {
+function formatGraphIssues(document: WorkflowDocument): string {
   const issues = validateGraph(document);
   return issues.length ? issues.map((issue: { path: string; message: string }) => `${issue.path} — ${issue.message}`).join('\n') : '';
 }

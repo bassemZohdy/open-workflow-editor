@@ -1,6 +1,31 @@
-import { buildFlatGraph, validate } from '@openworkflowspec/sdk';
+import { buildFlatGraph, validate, GraphNodeType } from '@openworkflowspec/sdk';
 import * as yaml from 'js-yaml';
 import { DEFAULT_JAVASCRIPT_TASK } from './scriptContract';
+import type {
+  CanvasPosition,
+  CanvasPositions,
+  FlowEdge,
+  FlowGraph,
+  FlowNode,
+  GraphIssue,
+  ParsedWorkflow,
+  TaskDefinition,
+  TaskItem,
+  WorkflowDocument,
+  WorkflowFormat,
+} from './types';
+
+/** The SDK's workflow AST type, derived from buildFlatGraph's signature. */
+type SdkWorkflow = Parameters<typeof buildFlatGraph>[0];
+
+export interface SmartCityWorkflowExample {
+  id: string;
+  label: string;
+  description: string;
+  referenceLabel: string;
+  referenceUrl: string;
+  specification: string;
+}
 
 export const SAMPLE_WORKFLOW = `document:
   dsl: "1.0.3"
@@ -84,7 +109,7 @@ do:
 schedule:
   every: PT24H`;
 
-export const SMART_CITY_WORKFLOWS = [
+export const SMART_CITY_WORKFLOWS: SmartCityWorkflowExample[] = [
   {
     id: 'rta-nol-travel-pass-renewal',
     label: 'RTA nol Travel Pass renewal',
@@ -327,7 +352,7 @@ export const NEW_WORKFLOW = `document:
   version: "0.1.0"
 do: []`;
 
-export const TASK_TEMPLATES = {
+export const TASK_TEMPLATES: Record<string, TaskDefinition> = {
   set: { set: { value: '' } },
   call: { call: 'http', with: { method: 'get', endpoint: 'https://example.com' } },
   switch: { switch: [{ caseOne: { when: '${ true }', then: 'continue' } }] },
@@ -352,61 +377,66 @@ export const TASK_TEMPLATES = {
   wait: { wait: 'PT5S' },
 };
 
-const clone = (value) => JSON.parse(JSON.stringify(value));
+const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
-const toPlain = (value) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
+const toPlain = <T>(value: T): T | undefined =>
+  value === undefined ? undefined : (JSON.parse(JSON.stringify(value)) as T);
 const graphPortSuffixes = ['-entry-node', '-exit-node'];
 
-function visibleGraphNodeId(id) {
+function visibleGraphNodeId(id: string): string {
   const value = String(id || '');
   if (!value.startsWith('port-')) return value;
   const suffix = graphPortSuffixes.find((candidate) => value.endsWith(candidate));
   return suffix ? value.slice('port-'.length, -suffix.length) : value;
 }
 
-let elkPromise;
+type ElkInstance = InstanceType<(typeof import('elkjs/lib/elk.bundled.js'))['default']>;
+
+let elkPromise: Promise<ElkInstance> | undefined;
 
 const FLOW_NODE_WIDTH = 208;
 const FLOW_NODE_HEIGHT = 62;
 const FLOW_PORT_WIDTH = 83;
 const FLOW_PORT_HEIGHT = 42;
 
-function getElk() {
+function getElk(): Promise<ElkInstance> {
   elkPromise ||= import('elkjs/lib/elk.bundled.js').then(({ default: ELK }) => new ELK());
   return elkPromise;
 }
 
-export function parseWorkflow(content) {
-  const document = yaml.load(content);
+export function parseWorkflow(content: string): ParsedWorkflow {
+  const document = yaml.load(content) as WorkflowDocument;
   validate('Workflow', document);
   return {
     document,
-    graph: buildFlatGraph(document),
+    graph: buildFlatGraph(document as unknown as SdkWorkflow),
   };
 }
 
-export function serializeWorkflow(document, format = 'yaml') {
+export function serializeWorkflow(document: WorkflowDocument, format: WorkflowFormat = 'yaml'): string {
   validate('Workflow', document);
   return format === 'json'
     ? JSON.stringify(document, null, 2)
     : yaml.dump(document, { lineWidth: -1, noRefs: true, sortKeys: false });
 }
 
-export function createFlowGraph(document, positions = {}) {
-  const graph = buildFlatGraph(document);
-  const graphNodes = graph.nodes.filter((node) => node.type !== 'entry' && node.type !== 'exit');
+export function createFlowGraph(document: WorkflowDocument, positions: CanvasPositions = {}): FlowGraph {
+  const graph = buildFlatGraph(document as unknown as SdkWorkflow);
+  const graphNodes = graph.nodes.filter(
+    (node) => node.type !== GraphNodeType.Entry && node.type !== GraphNodeType.Exit,
+  );
   const graphNodeIds = new Set(graphNodes.map((node) => node.id));
   let taskIndex = 0;
-  const tasks = graphNodes.filter((node) => node.type !== 'start' && node.type !== 'end');
+  const tasks = graphNodes.filter((node) => node.type !== GraphNodeType.Start && node.type !== GraphNodeType.End);
   const taskCount = tasks.length;
   const defaultTaskGap = 50;
 
-  const nodes = graphNodes.map((node) => {
-    const isPort = node.type === 'start' || node.type === 'end';
-    const position =
+  const nodes: FlowNode[] = graphNodes.map((node) => {
+    const isPort = node.type === GraphNodeType.Start || node.type === GraphNodeType.End;
+    const position: CanvasPosition =
       positions[node.id] ??
       (isPort
-        ? { x: 250, y: node.type === 'start' ? 18 : 110 + taskCount * defaultTaskGap }
+        ? { x: 250, y: node.type === GraphNodeType.Start ? 18 : 110 + taskCount * defaultTaskGap }
         : { x: 250, y: 70 + taskIndex++ * defaultTaskGap });
 
     return {
@@ -414,7 +444,7 @@ export function createFlowGraph(document, positions = {}) {
       type: isPort ? 'port' : 'task',
       position,
       data: {
-        label: node.label ?? (node.type === 'start' ? 'Start' : 'End'),
+        label: node.label ?? (node.type === GraphNodeType.Start ? 'Start' : 'End'),
         taskType: node.type,
         taskReference: node.taskReference,
         task: toPlain(node.task),
@@ -425,12 +455,12 @@ export function createFlowGraph(document, positions = {}) {
     };
   });
 
-  let edges = graph.edges
+  let edges: FlowEdge[] = graph.edges
     .map((edge) => ({
       id: edge.id,
       source: visibleGraphNodeId(edge.sourceId),
       target: visibleGraphNodeId(edge.targetId),
-      type: 'smoothstep',
+      type: 'smoothstep' as const,
       label: edge.label || undefined,
       data: { label: edge.label || '' },
       animated: Boolean(edge.label),
@@ -440,10 +470,11 @@ export function createFlowGraph(document, positions = {}) {
     );
 
   graphNodes
-    .filter((node) => node.type === 'fork')
+    .filter((node) => node.type === GraphNodeType.Fork)
     .forEach((forkNode) => {
-      const branchIds = (forkNode.task?.fork?.branches || []).flatMap((branch) => {
-        const branchName = Object.keys(branch || {})[0];
+      const forkTask = forkNode.task as { fork?: { branches?: unknown[] } } | undefined;
+      const branchIds = (forkTask?.fork?.branches || []).flatMap((branch) => {
+        const branchName = Object.keys((branch as Record<string, unknown>) || {})[0];
         return branchName ? [`${forkNode.id}/fork/branches/${branchName}`] : [];
       });
       if (!branchIds.length) return;
@@ -489,7 +520,7 @@ export function createFlowGraph(document, positions = {}) {
   return { nodes, edges };
 }
 
-export async function autoLayoutFlow(document) {
+export async function autoLayoutFlow(document: WorkflowDocument): Promise<CanvasPositions> {
   const elk = await getElk();
   const flow = createFlowGraph(document);
   const layout = await elk.layout({
@@ -515,153 +546,187 @@ export async function autoLayoutFlow(document) {
   });
 
   return Object.fromEntries(
-    (layout.children || []).map((node) => [node.id, { x: node.x || 0, y: node.y || 0 }]),
+    (layout.children || []).map((node): [string, CanvasPosition] => [node.id, { x: node.x || 0, y: node.y || 0 }]),
   );
 }
 
-export function getTopLevelTask(document, nodeId) {
+export interface TopLevelTask {
+  index: number;
+  name: string;
+  task: TaskDefinition;
+  type: string;
+}
+
+export function getTopLevelTask(document: WorkflowDocument, nodeId: string | null): TopLevelTask | null {
   const taskName = nodeId?.startsWith('/do/') ? nodeId.slice('/do/'.length) : null;
   if (!taskName || taskName.includes('/')) return null;
-  const index = document.do.findIndex((item) => Object.hasOwn(item, taskName));
+  const doList = document.do ?? [];
+  const index = doList.findIndex((item) => Object.hasOwn(item, taskName));
   if (index < 0) return null;
+  const task = doList[index][taskName];
   return {
     index,
     name: taskName,
-    task: document.do[index][taskName],
-    type: Object.keys(document.do[index][taskName])[0],
+    task,
+    type: Object.keys(task)[0],
   };
 }
 
-export function addTopLevelTask(document, taskType) {
+export function addTopLevelTask(document: WorkflowDocument, taskType: string): WorkflowDocument {
   const next = clone(document);
+  const nextDo: TaskItem[] = next.do ?? [];
   const baseName = `${taskType}Task`;
   let name = baseName;
   let suffix = 2;
-  while (next.do.some((item) => Object.hasOwn(item, name))) name = `${baseName}${suffix++}`;
+  while (nextDo.some((item) => Object.hasOwn(item, name))) name = `${baseName}${suffix++}`;
 
   const task = clone(TASK_TEMPLATES[taskType] || TASK_TEMPLATES.set);
 
-  next.do.push({ [name]: task });
+  nextDo.push({ [name]: task });
+  next.do = nextDo;
   validate('Workflow', next);
   return next;
 }
 
-export function updateTopLevelTaskName(document, nodeId, nextName) {
+export function updateTopLevelTaskName(
+  document: WorkflowDocument,
+  nodeId: string | null,
+  nextName: string,
+): WorkflowDocument {
   const selected = getTopLevelTask(document, nodeId);
   const cleanName = nextName.trim().replace(/[^a-zA-Z0-9_-]/g, '-');
   if (
     !selected ||
     !cleanName ||
     cleanName === selected.name ||
-    document.do.some((item) => Object.hasOwn(item, cleanName))
+    (document.do ?? []).some((item) => Object.hasOwn(item, cleanName))
   )
     return document;
 
   const next = clone(document);
-  next.do[selected.index] = { [cleanName]: next.do[selected.index][selected.name] };
+  (next.do ?? [])[selected.index] = { [cleanName]: (next.do ?? [])[selected.index][selected.name] };
   return next;
 }
 
-export function updateTopLevelTaskConfig(document, nodeId, config) {
+export function updateTopLevelTaskConfig(
+  document: WorkflowDocument,
+  nodeId: string | null,
+  config: unknown,
+): WorkflowDocument {
   const selected = getTopLevelTask(document, nodeId);
   if (!selected || !config || typeof config !== 'object' || Array.isArray(config)) return document;
 
   const next = clone(document);
-  next.do[selected.index] = { [selected.name]: config };
+  (next.do ?? [])[selected.index] = { [selected.name]: config as TaskDefinition };
   return next;
 }
 
-export function duplicateTopLevelTask(document, nodeId) {
+export function duplicateTopLevelTask(document: WorkflowDocument, nodeId: string | null): WorkflowDocument {
   const selected = getTopLevelTask(document, nodeId);
   if (!selected) return document;
 
   const next = clone(document);
+  const nextDo = next.do ?? [];
   const baseName = `${selected.name}-copy`;
   let name = baseName;
   let suffix = 2;
-  while (next.do.some((item) => Object.hasOwn(item, name))) name = `${baseName}-${suffix++}`;
+  while (nextDo.some((item) => Object.hasOwn(item, name))) name = `${baseName}-${suffix++}`;
 
   const duplicate = clone(selected.task);
   delete duplicate.then;
-  next.do.splice(selected.index + 1, 0, { [name]: duplicate });
-  validate('Workflow', next);
+  nextDo.splice(selected.index + 1, 0, { [name]: duplicate });
   return next;
 }
 
-export function updateTopLevelTaskField(document, nodeId, path, value) {
+export function updateTopLevelTaskField(
+  document: WorkflowDocument,
+  nodeId: string | null,
+  path: Array<string | number>,
+  value: unknown,
+): WorkflowDocument {
   const selected = getTopLevelTask(document, nodeId);
   if (!selected || !Array.isArray(path) || path.length === 0) return document;
 
   const next = clone(document);
-  let target = next.do[selected.index][selected.name];
+  let target = (next.do ?? [])[selected.index][selected.name] as Record<string, unknown>;
   path.slice(0, -1).forEach((key) => {
     if (!target[key] || typeof target[key] !== 'object') target[key] = {};
-    target = target[key];
+    target = target[key] as Record<string, unknown>;
   });
   target[path[path.length - 1]] = value;
   validate('Workflow', next);
   return next;
 }
 
-export function removeTopLevelTask(document, nodeId) {
+export function removeTopLevelTask(document: WorkflowDocument, nodeId: string | null): WorkflowDocument {
   const selected = getTopLevelTask(document, nodeId);
   if (!selected) return document;
   const next = clone(document);
-  next.do.splice(selected.index, 1);
-  next.do.forEach((item) => {
+  const nextDo = next.do ?? [];
+  nextDo.splice(selected.index, 1);
+  nextDo.forEach((item) => {
     const task = item[Object.keys(item)[0]];
     if (task?.then === selected.name) delete task.then;
   });
   return next;
 }
 
-function followsThen(document, startName, targetName) {
-  const seen = new Set();
-  let current = startName;
+function followsThen(document: WorkflowDocument, startName: string, targetName: string): boolean {
+  const seen = new Set<string>();
+  let current: string | null = startName;
   while (current && !seen.has(current)) {
     if (current === targetName) return true;
     seen.add(current);
-    const task = getTopLevelTask(document, `/do/${current}`)?.task;
+    const task: TaskDefinition | undefined = getTopLevelTask(document, `/do/${current}`)?.task;
     current = typeof task?.then === 'string' ? task.then : null;
   }
   return false;
 }
 
-export function connectTopLevelTasks(document, sourceId, targetId) {
+export function connectTopLevelTasks(
+  document: WorkflowDocument,
+  sourceId: string,
+  targetId: string,
+): WorkflowDocument {
   const source = getTopLevelTask(document, sourceId);
   const target = getTopLevelTask(document, targetId);
   if (!source || !target || source.name === target.name) return document;
   if (followsThen(document, target.name, source.name)) return document;
 
   const next = clone(document);
-  const sourceTask = next.do[source.index][source.name];
+  const sourceTask = (next.do ?? [])[source.index][source.name];
   sourceTask.then = target.name;
   validate('Workflow', next);
   return next;
 }
 
-export function disconnectTopLevelTasks(document, sourceId, targetId) {
+export function disconnectTopLevelTasks(
+  document: WorkflowDocument,
+  sourceId: string,
+  targetId: string,
+): WorkflowDocument {
   const source = getTopLevelTask(document, sourceId);
   const target = getTopLevelTask(document, targetId);
   if (!source || !target) return document;
 
   const next = clone(document);
-  const sourceTask = next.do[source.index][source.name];
+  const sourceTask = (next.do ?? [])[source.index][source.name];
   if (sourceTask.then === target.name) delete sourceTask.then;
   return next;
 }
 
-export function validateGraph(document) {
-  const issues = [];
-  const names = new Set();
+export function validateGraph(document: WorkflowDocument): GraphIssue[] {
+  const issues: GraphIssue[] = [];
+  const doList = document.do ?? [];
+  const names = new Set<string>();
 
-  document.do.forEach((item) => {
+  doList.forEach((item) => {
     const name = Object.keys(item)[0];
     if (names.has(name)) issues.push({ path: `/do/${name}`, message: 'Task name is duplicated.' });
     names.add(name);
   });
 
-  document.do.forEach((item) => {
+  doList.forEach((item) => {
     const name = Object.keys(item)[0];
     const task = item[name];
     if (typeof task.then === 'string' && !names.has(task.then)) {
@@ -669,9 +734,9 @@ export function validateGraph(document) {
     }
   });
 
-  const visited = new Set();
-  const visiting = new Set();
-  const visit = (name) => {
+  const visited = new Set<string>();
+  const visiting = new Set<string>();
+  const visit = (name: string): void => {
     if (visiting.has(name)) {
       issues.push({ path: `/do/${name}/then`, message: 'The workflow contains a cycle.' });
       return;
@@ -686,8 +751,8 @@ export function validateGraph(document) {
   names.forEach(visit);
 
   try {
-    const graph = buildFlatGraph(document);
-    const adjacency = new Map();
+    const graph = buildFlatGraph(document as unknown as SdkWorkflow);
+    const adjacency = new Map<string, string[]>();
     graph.edges.forEach((edge) => {
       const source = visibleGraphNodeId(edge.sourceId);
       const target = visibleGraphNodeId(edge.targetId);
@@ -698,7 +763,7 @@ export function validateGraph(document) {
     const reachable = new Set(['root-entry-node']);
     const queue = ['root-entry-node'];
     while (queue.length) {
-      const current = queue.shift();
+      const current = queue.shift() as string;
       (adjacency.get(current) || []).forEach((target) => {
         if (!reachable.has(target)) {
           reachable.add(target);

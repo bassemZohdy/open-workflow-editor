@@ -1,27 +1,88 @@
 import { validate as validateWorkflow } from '@openworkflowspec/sdk';
 import { assertRuntimeAdapter } from './runtimeAdapter';
+import type { EventFilter, TaskDefinition, TaskItem, WorkflowDocument } from './types';
 
-const clone = (value) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
-const pause = (milliseconds) =>
+interface DemoTaskProgress {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  retries: number;
+  output?: unknown;
+  next?: string;
+  error?: string;
+  durationMs?: number;
+  startedAt?: string;
+  endedAt?: string;
+}
+
+interface DemoActiveTask {
+  id: string;
+  name: string;
+  type: string;
+  scope: string;
+  startedAt: string;
+}
+
+interface ScriptExecutionPayload {
+  code: string;
+  language: string;
+  input: Record<string, unknown>;
+  context: Record<string, unknown>;
+  catalogs: Record<string, unknown>;
+}
+
+type ScriptExecutor = (payload: ScriptExecutionPayload) => Promise<unknown>;
+
+interface DemoRun {
+  runId: string;
+  status: string;
+  runtime: 'demo';
+  demo: boolean;
+  input: Record<string, unknown>;
+  context: Record<string, unknown>;
+  catalogs: Record<string, unknown>;
+  tasks: DemoTaskProgress[];
+  failures: Array<{ message: string }>;
+  retries: number;
+  logs: string[];
+  stepDelay: number;
+  startedAt: string;
+  startedAtMs: number;
+  activeTask: DemoActiveTask | null;
+  cancelRequested: boolean;
+  executeScript?: ScriptExecutor;
+  output?: unknown;
+  endedAt?: string;
+  durationMs?: number;
+}
+
+const clone = <T>(value: T): T => (value === undefined ? undefined : JSON.parse(JSON.stringify(value))) as T;
+const pause = (milliseconds: number): Promise<void> =>
   milliseconds > 0
     ? new Promise((resolve) => globalThis.setTimeout(resolve, milliseconds))
     : Promise.resolve();
 
-function taskEntries(taskList = []) {
+function taskEntries(taskList: TaskItem[] = []): Array<{ name: string; definition: TaskDefinition }> {
   return taskList.flatMap((item) =>
     Object.entries(item || {}).map(([name, definition]) => ({ name, definition: definition || {} })),
   );
 }
 
-function readPath(value, path) {
-  return path.split('.').reduce((current, key) => current?.[key], value);
+function readPath(value: unknown, path: string): unknown {
+  return path
+    .split('.')
+    .reduce<unknown>(
+      (current, key) => (current as Record<string, unknown> | undefined | null)?.[key],
+      value,
+    );
 }
 
-function evaluateValue(value, context) {
+function evaluateValue(value: unknown, context: { context: unknown; input: unknown }): unknown {
   if (Array.isArray(value)) return value.map((item) => evaluateValue(item, context));
   if (value && typeof value === 'object') {
     return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, evaluateValue(item, context)]),
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, evaluateValue(item, context)]),
     );
   }
   if (typeof value !== 'string') return value;
@@ -46,33 +107,35 @@ function evaluateValue(value, context) {
   return expression;
 }
 
-function evaluateCondition(value, context) {
+function evaluateCondition(value: unknown, context: { context: unknown; input: unknown }): boolean {
   const result = evaluateValue(value, context);
   return result === true || result === 'true';
 }
 
-function demoValidation(document) {
-  validateWorkflow('Workflow', document);
+function demoValidation(workflow: WorkflowDocument) {
+  validateWorkflow('Workflow', workflow);
   return {
     valid: true,
     runtime: { name: 'Open Workflow Demo Engine', version: '0.1.0' },
   };
 }
 
-function workflowTrigger(workflow) {
+function workflowTrigger(workflow: WorkflowDocument): string {
   if (workflow.schedule) {
-    const schedule = workflow.schedule.every || workflow.schedule.cron || workflow.schedule.after;
-    return `schedule:${schedule || 'configured'}`;
+    const schedule = workflow.schedule;
+    const value = schedule.every || schedule.cron || schedule.after;
+    return `schedule:${value || 'configured'}`;
   }
   const firstTask = taskEntries(workflow.do || [])[0]?.definition;
   if (firstTask?.listen) {
-    const eventFilter = firstTask.listen.to?.one?.with || firstTask.listen.to?.any?.[0]?.with;
+    const eventFilter: EventFilter | undefined =
+      firstTask.listen.to?.one?.with || firstTask.listen.to?.any?.[0]?.with;
     return `event:${eventFilter?.type || 'configured'}`;
   }
   return 'manual';
 }
 
-function addLog(run, message, details = {}) {
+function addLog(run: DemoRun, message: string, details: Record<string, unknown> = {}): void {
   const detailText = Object.entries(details)
     .filter(([, value]) => value !== undefined && value !== null && value !== '')
     .map(([key, value]) => `${key}=${String(value).replace(/\s+/g, ' ')}`)
@@ -80,12 +143,17 @@ function addLog(run, message, details = {}) {
   run.logs.push(`[${new Date().toISOString()}] ${message}${detailText ? ` · ${detailText}` : ''}`);
 }
 
-function ensureActive(run) {
+function ensureActive(run: DemoRun): void {
   if (run.cancelRequested) throw new Error('Demo run cancelled.');
 }
 
-function createTaskProgress(run, id, name, definition) {
-  const progress = {
+function createTaskProgress(
+  run: DemoRun,
+  id: string,
+  name: string,
+  definition: TaskDefinition,
+): DemoTaskProgress {
+  const progress: DemoTaskProgress = {
     id,
     name,
     type: Object.keys(definition)[0] || 'unknown',
@@ -96,8 +164,8 @@ function createTaskProgress(run, id, name, definition) {
   return progress;
 }
 
-async function executeTaskList(taskList, run, scope = '') {
-  const entries = taskEntries(taskList);
+async function executeTaskList(taskList: TaskItem[] | undefined, run: DemoRun, scope = ''): Promise<void> {
+  const entries = taskEntries(taskList || []);
   const byName = new Map(entries.map((entry, index) => [entry.name, index]));
   let index = 0;
   let transitions = 0;
@@ -134,36 +202,41 @@ async function executeTaskList(taskList, run, scope = '') {
       });
       run.activeTask = null;
       if (result.next && byName.has(result.next)) {
-        index = byName.get(result.next);
+        index = byName.get(result.next) as number;
       } else {
         index += 1;
       }
     } catch (error) {
       progress.status = run.cancelRequested ? 'cancelled' : 'failed';
-      progress.error = error.message;
+      progress.error = error instanceof Error ? error.message : String(error);
       progress.durationMs = Date.now() - startedAtMs;
       progress.endedAt = new Date().toISOString();
       run.activeTask = null;
       addLog(run, `Failed task ${scope}${name}`, {
         type: progress.type,
         durationMs: progress.durationMs,
-        error: error.message,
+        error: progress.error,
       });
       throw error;
     }
   }
 }
 
-async function executeTask(name, definition, run, scope) {
+async function executeTask(
+  name: string,
+  definition: TaskDefinition,
+  run: DemoRun,
+  scope: string,
+): Promise<{ output: unknown; next?: string }> {
   const context = { context: run.context, input: run.input };
   if (definition.set) {
-    const values = evaluateValue(definition.set, context);
+    const values = evaluateValue(definition.set, context) as Record<string, unknown>;
     Object.assign(run.context, values);
     addLog(run, `Updated context in ${scope}${name}`, { keys: Object.keys(values).join(',') });
     return { output: values, next: definition.then };
   }
   if (definition.call) {
-    const request = evaluateValue(definition.with || {}, context);
+    const request = evaluateValue(definition.with || {}, context) as Record<string, unknown>;
     addLog(run, `Mocked call ${definition.call}`, {
       method: request.method || 'get',
       endpoint: request.endpoint || 'not-specified',
@@ -210,7 +283,7 @@ async function executeTask(name, definition, run, scope) {
       const [branchName, branchTask] = Object.entries(branch || {})[0] || [];
       addLog(run, `Starting fork branch ${scope}${name}/${branchName}`);
       const branchTasks = branchTask?.do ? branchTask.do : [{ [branchName]: branchTask }];
-      await executeTaskList(branchTasks.filter(Boolean), run, `${scope}${name}/${branchName}/`);
+      await executeTaskList((branchTasks as TaskItem[]).filter(Boolean), run, `${scope}${name}/${branchName}/`);
     }
     return { output: { demo: true, branches: branches.length }, next: definition.then };
   }
@@ -246,8 +319,8 @@ async function executeTask(name, definition, run, scope) {
     const script = definition.run.script;
     if (typeof run.executeScript === 'function') {
       const result = await run.executeScript({
-        code: script.code,
-        language: script.language,
+        code: script.code as string,
+        language: script.language as string,
         input: run.input,
         context: run.context,
         catalogs: run.catalogs,
@@ -275,21 +348,26 @@ async function executeTask(name, definition, run, scope) {
   return { output: { demo: true, task: name }, next: definition.then };
 }
 
-export function createDemoRuntimeAdapter({ stepDelay = 180, executeScript } = {}) {
-  const runs = new Map();
+export interface DemoRuntimeOptions {
+  stepDelay?: number;
+  executeScript?: ScriptExecutor;
+}
+
+export function createDemoRuntimeAdapter({ stepDelay = 180, executeScript }: DemoRuntimeOptions = {}) {
+  const runs = new Map<string, DemoRun>();
   let sequence = 0;
 
-  const validate = async (workflow) => demoValidation(workflow);
+  const validate = async (workflow: WorkflowDocument) => demoValidation(workflow);
 
-  const start = async (workflow, inputs = {}) => {
+  const start = async (workflow: WorkflowDocument, inputs: Record<string, unknown> = {}) => {
     demoValidation(workflow);
     const runId = `demo-run-${++sequence}`;
-    const run = {
+    const run: DemoRun = {
       runId,
       status: 'running',
       runtime: 'demo',
       demo: true,
-      input: clone(inputs),
+      input: clone(inputs) || {},
       context: clone(inputs) || {},
       catalogs: clone(workflow.use?.catalogs || {}),
       tasks: [],
@@ -322,28 +400,28 @@ export function createDemoRuntimeAdapter({ stepDelay = 180, executeScript } = {}
           durationMs: run.durationMs,
         });
       })
-      .catch((error) => {
+      .catch((error: unknown) => {
         run.status = run.cancelRequested ? 'cancelled' : 'failed';
-        run.failures.push({ message: error.message });
+        run.failures.push({ message: error instanceof Error ? error.message : String(error) });
         run.endedAt = new Date().toISOString();
         run.durationMs = Date.now() - run.startedAtMs;
         addLog(run, `${run.status === 'cancelled' ? 'Cancelled' : 'Failed'} local demo run ${runId}`, {
           durationMs: run.durationMs,
-          error: error.message,
+          error: error instanceof Error ? error.message : String(error),
         });
       });
 
     return { runId, status: run.status, runtime: 'demo', demo: true };
   };
 
-  const getRun = (runId) => {
+  const getRun = (runId: string): DemoRun => {
     const run = runs.get(String(runId));
     if (!run) throw new Error(`Demo run ${runId} was not found.`);
     return run;
   };
 
-  const status = async (runId) => clone(getRun(runId));
-  const cancel = async (runId) => {
+  const status = async (runId: string) => clone(getRun(runId));
+  const cancel = async (runId: string) => {
     const run = getRun(runId);
     if (run.status === 'running') {
       run.cancelRequested = true;
@@ -353,7 +431,7 @@ export function createDemoRuntimeAdapter({ stepDelay = 180, executeScript } = {}
     }
     return { runId: run.runId, status: 'cancellation-requested', demo: true };
   };
-  const logs = async (runId) => getRun(runId).logs.join('\n');
+  const logs = async (runId: string) => getRun(runId).logs.join('\n');
 
   return assertRuntimeAdapter({ validate, start, status, cancel, logs });
 }
