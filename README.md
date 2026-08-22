@@ -23,6 +23,7 @@ A production-grade browser-based visual authoring and simulation environment for
 - **Settings, Breadcrumbs & Canvas Controls:** Settings dialog (`Ctrl/Cmd+,`) centralizing theme, panel visibility, mini-map, gateway URL/token, and export/import of settings profiles as JSON (secrets excluded); live breadcrumbs (`workflow / do / <task>`, resolving into container tasks such as `for.do`, `fork.branches`, `try`/`catch`); drag-to-reorder tab bar; zoom controls (`Ctrl/Cmd+= / - / 0`) with per-workflow viewport persistence.
 
 Full IDE-parity reference (surfaces, shortcuts, persistence keys): [`docs/ide-parity.md`](docs/ide-parity.md).
+**AI orchestration:** the palette **AI** group is live — `LLM call` and `AI agent call` compose valid DSL (sub-flow delegation + catalog-backed providers) and scaffold runnable catalog-backed sub-flows; see [`docs/ai-tasks.md`](docs/ai-tasks.md).
 
 ---
 
@@ -61,10 +62,10 @@ Click **Deploy bundle** in the workspace toolbar to generate:
 ## Verification Commands
 
 ```bash
-# Run Vitest unit tests (65 tests)
+# Run Vitest unit tests (69 tests)
 npm test
 
-# Run Playwright E2E browser tests (61 tests, parallel)
+# Run Playwright E2E browser tests (63 tests, parallel)
 npm run test:browser
 
 # Type-check TypeScript

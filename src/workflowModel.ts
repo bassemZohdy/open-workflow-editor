@@ -1,6 +1,6 @@
 import { buildFlatGraph, validate, GraphNodeType } from '@openworkflowspec/sdk';
 import * as yaml from 'js-yaml';
-import { DEFAULT_JAVASCRIPT_TASK } from './scriptContract';
+import { AI_AGENT_SCRIPT, AI_LLM_SCRIPT, DEFAULT_JAVASCRIPT_TASK, type AiTaskKind } from './scriptContract';
 import type {
   CanvasPosition,
   CanvasPositions,
@@ -17,6 +17,123 @@ import type {
 
 /** The SDK's workflow AST type, derived from buildFlatGraph's signature. */
 type SdkWorkflow = Parameters<typeof buildFlatGraph>[0];
+
+/**
+ * AI task composition: the palette AI entries are NOT new DSL task keys (the
+ * Open Workflow 1.0.3 schema does not accept them yet), so they are composed
+ * from valid primitives — a `run.workflow` delegation task in the parent plus
+ * a scaffolded sub-flow (`ai` namespace) that reads a catalog-backed provider
+ * and executes a runnable script contract.
+ */
+export interface AiTaskSpec {
+  kind: AiTaskKind;
+  label: string;
+  /** Parent task name created by `addTopLevelAiTask`. */
+  taskName: string;
+  subflowNamespace: string;
+  subflowName: string;
+  subflowVersion: string;
+}
+
+export const AI_TASK_SPECS: AiTaskSpec[] = [
+  {
+    kind: 'llm-call',
+    label: 'LLM call',
+    taskName: 'aiLlmTask',
+    subflowNamespace: 'ai',
+    subflowName: 'prompt-llm',
+    subflowVersion: '0.1.0',
+  },
+  {
+    kind: 'ai-agent-call',
+    label: 'AI agent call',
+    taskName: 'aiAgentTask',
+    subflowNamespace: 'ai',
+    subflowName: 'ai-agent',
+    subflowVersion: '0.1.0',
+  },
+];
+
+export function getAiTaskSpec(kind: AiTaskKind): AiTaskSpec {
+  const spec = AI_TASK_SPECS.find((candidate) => candidate.kind === kind);
+  if (!spec) throw new Error(`Unknown AI task kind: ${kind}`);
+  return spec;
+}
+
+/** The catalog key the LLM sub-flow resolves its provider endpoint from. */
+export const AI_PROVIDER_CATALOG = 'ai-providers';
+export const AI_AGENT_CATALOG = 'agents';
+
+/** Builds a schema-valid AI sub-flow document (catalog + runnable script stub). */
+export function createAiSubflowDocument(kind: AiTaskKind): WorkflowDocument {
+  const spec = getAiTaskSpec(kind);
+  const isLlm = kind === 'llm-call';
+  const script = isLlm ? AI_LLM_SCRIPT : AI_AGENT_SCRIPT;
+  const invokeName = isLlm ? 'invokeLlm' : 'runAgent';
+  const resultKey = isLlm ? 'llmResult' : 'agentResult';
+  const resultValue = isLlm ? '${ $context.invokeLlm.completion }' : '${ $context.runAgent.outcome }';
+  const catalogKey = isLlm ? AI_PROVIDER_CATALOG : AI_AGENT_CATALOG;
+  const catalogEndpoint = isLlm ? 'https://api.example.ai/v1/chat' : 'https://api.example.ai/v1/agent';
+
+  return {
+    document: {
+      dsl: '1.0.3',
+      namespace: spec.subflowNamespace,
+      name: spec.subflowName,
+      version: spec.subflowVersion,
+      metadata: { category: 'ai', kind },
+    },
+    use: {
+      catalogs: {
+        [catalogKey]: { endpoint: catalogEndpoint },
+      },
+    },
+    do: [
+      {
+        [invokeName]: {
+          run: {
+            script: {
+              language: 'javascript',
+              code: script,
+            },
+          },
+          then: 'captureResult',
+        },
+      },
+      {
+        captureResult: {
+          set: {
+            [resultKey]: resultValue,
+          },
+        },
+      },
+    ],
+  };
+}
+
+/** Adds an AI delegation task (`run.workflow` → AI sub-flow) at the end of `do`. */
+export function addTopLevelAiTask(document: WorkflowDocument, kind: AiTaskKind): WorkflowDocument {
+  const spec = getAiTaskSpec(kind);
+  const next = clone(document);
+  const nextDo: TaskItem[] = next.do ?? [];
+  let taskName = spec.taskName;
+  let suffix = 2;
+  while (nextDo.some((item) => Object.hasOwn(item, taskName))) taskName = `${spec.taskName}-${suffix++}`;
+  nextDo.push({
+    [taskName]: {
+      run: {
+        workflow: {
+          namespace: spec.subflowNamespace,
+          name: spec.subflowName,
+          version: spec.subflowVersion,
+        },
+      },
+    },
+  });
+  next.do = nextDo;
+  validate('Workflow', next);
+  return next;
+}
 
 export interface SmartCityWorkflowExample {
   id: string;

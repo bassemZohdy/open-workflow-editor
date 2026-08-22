@@ -4470,3 +4470,64 @@ button:focus-visible,
   width: auto;
   max-width: 200px;
 }
+
+/* ------------------------------------------------------------------ */
+/* AI task families: inspector card for `run.workflow` AI delegation.  */
+/* ------------------------------------------------------------------ */
+.ai-task-card {
+  display: flex;
+  gap: 10px;
+  margin: 14px 0 4px;
+  padding: 10px 12px;
+  border: 1px solid rgba(192, 38, 211, 0.35);
+  border-radius: 8px;
+  background: #fdf5ff;
+  color: var(--ink);
+}
+[data-theme='dark'] .ai-task-card {
+  background: rgba(192, 38, 211, 0.12);
+}
+.ai-task-card-badge {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  border-radius: 7px;
+  background: #fae8ff;
+  color: #c026d3;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+[data-theme='dark'] .ai-task-card-badge {
+  background: rgba(192, 38, 211, 0.25);
+  color: #f0abfc;
+}
+.ai-task-card-body {
+  min-width: 0;
+}
+.ai-task-card-body strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+.ai-task-card-body p {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+.ai-task-card-body code {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  color: #a21caf;
+}
+.ai-task-card-actions {
+  display: flex;
+  gap: 6px;
+}
+.ai-task-card-actions .button {
+  height: 26px;
+  font-size: 10px;
+}

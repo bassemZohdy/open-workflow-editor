@@ -194,17 +194,16 @@ test('right rail panel heads toggle on click and show chevrons', async ({ page }
 // Task 15: grouped task palette + AI prototype group
 // ---------------------------------------------------------------------------
 
-test('palette is grouped and shows the AI group as coming soon', async ({ page }) => {
+test('palette is grouped and the AI group entries are live', async ({ page }) => {
   const palette = page.locator('.left-rail .palette-list');
   for (const group of ['Flow control', 'Data & logic', 'Services', 'Events', 'AI']) {
     await expect(palette.getByRole('button', { name: new RegExp(`^${group.split(' ')[0]}`) })).toBeVisible();
   }
-  const llm = palette.getByRole('button', { name: 'Coming soon: LLM call task' });
+  const llm = palette.getByRole('button', { name: 'Add LLM call task' });
   await expect(llm).toBeVisible();
-  await expect(llm.locator('.palette-soon')).toHaveText('soon');
-  await expect(llm).toHaveAttribute('aria-disabled', 'true');
-  const agent = palette.getByRole('button', { name: 'Coming soon: AI agent call task' });
-  await expect(agent).toBeVisible();
+  await expect(llm.locator('.palette-soon')).toHaveCount(0);
+  await expect(llm).not.toHaveAttribute('aria-disabled', 'true');
+  await expect(palette.getByRole('button', { name: 'Add AI agent call task' })).toBeVisible();
   // Existing items are still addable.
   await expect(palette.getByRole('button', { name: 'Add Wait task' })).toBeVisible();
 });
@@ -313,6 +312,38 @@ test('canvas-scoped palette commands switch to the canvas view', async ({ page }
   await page.keyboard.press('Enter');
   await expect(page.getByRole('button', { name: 'Canvas' })).toHaveClass(/active/);
   await expect(page.locator('.canvas-shell')).toBeVisible();
+});
+
+// ---------------------------------------------------------------------------
+// Task 16: AI task families (sub-flow delegation + catalog-backed providers)
+// ---------------------------------------------------------------------------
+
+test('AI palette entry scaffolds a delegation task and catalog-backed sub-flow', async ({ page }) => {
+  await page.getByRole('button', { name: 'Add LLM call task' }).press('Enter');
+  // The catalog-backed sub-flow opens in a new tab.
+  await expect(page.locator('.workflow-name-input')).toHaveValue('prompt-llm', { timeout: 8000 });
+  await page.getByRole('button', { name: 'Specification' }).click();
+  await expectSpecToContain(page, 'ai-providers');
+  await expectSpecToContain(page, 'invokeLlm');
+  // Back on the parent: the delegation task + AI node styling + inspector card.
+  await page.getByRole('tab', { name: 'rta-nol-travel-pass-renewal' }).click();
+  await page.getByRole('button', { name: 'Canvas' }).click();
+  const aiNode = page.locator('.react-flow__node-task').filter({ hasText: 'aiLlmTask' });
+  await expect(aiNode).toBeVisible({ timeout: 8000 });
+  await expect(aiNode.getByText('ai: prompt-llm')).toBeVisible();
+  await aiNode.click();
+  await expect(page.getByRole('group', { name: 'run task aiLlmTask' })).toBeVisible();
+  await expect(page.getByRole('group', { name: 'AI delegation: LLM call' })).toBeVisible();
+  await expect(page.getByText(/ai\/prompt-llm/)).toBeVisible();
+});
+
+test('template catalog includes the AI orchestration pattern', async ({ page }) => {
+  await page.getByLabel('Open template library').click();
+  await expect(page.getByText('AI Orchestration (LLM + Agent)')).toBeVisible();
+  await page.getByText('AI Orchestration (LLM + Agent)').click();
+  await page.getByRole('button', { name: 'Use template' }).click();
+  await expect(page.locator('.workflow-name-input')).toHaveValue(/ai-orchestration/);
+  await expect(page.getByRole('group', { name: 'run task delegateLlm' })).toBeVisible();
 });
 
 // ---------------------------------------------------------------------------

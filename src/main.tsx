@@ -16,10 +16,15 @@ import '@xyflow/react/dist/style.css';
 import { dump as yamlDump } from 'js-yaml';
 import './styles.css';
 import {
+  addTopLevelAiTask,
   addTopLevelTask,
+  AI_PROVIDER_CATALOG,
+  AI_TASK_SPECS,
   autoLayoutFlow,
+  createAiSubflowDocument,
   createFlowGraph,
   duplicateTopLevelTask,
+  getAiTaskSpec,
   getBreadcrumbPath,
   getTopLevelTask,
   NEW_WORKFLOW,
@@ -67,6 +72,7 @@ import { SpecEditor } from './components/layout/SpecEditor';
 import { SettingsDialog } from './components/layout/SettingsDialog';
 import type { LibraryWorkflowRow } from './components/layout/LibraryExplorer';
 import { openWorkflowFile, saveWorkflowFile } from './fileSystemAdapter';
+import type { AiTaskKind } from './scriptContract';
 import { EditorCanvas } from './components/canvas';
 import { Inspector } from './components/inspector';
 import { DEFAULT_PALETTE_GROUPS, paletteItems } from './taskMeta';
@@ -372,6 +378,9 @@ function App() {
   const [paletteGroupOrder, setPaletteGroupOrder] = useState<string[]>(() => readPaletteGroupOrder());
   const [revealActiveTick, setRevealActiveTick] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
+  const [aiScaffoldRequest, setAiScaffoldRequest] = useState<{ kind: AiTaskKind; requestId: number } | null>(
+    null,
+  );
   const [executionStatusMap, setExecutionStatusMap] = useState<
     Record<string, 'running' | 'success' | 'failed' | 'waiting'>
   >({});
@@ -438,6 +447,23 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem('open-workflow-theme', globalTheme);
   }, [globalTheme]);
+
+  // Post-commit AI sub-flow scaffolding: stashes the parent tab (which now
+  // includes the delegation task) and opens the catalog-backed sub-flow tab.
+  useEffect(() => {
+    if (!aiScaffoldRequest) return;
+    const spec = getAiTaskSpec(aiScaffoldRequest.kind);
+    const id = createWorkflowId();
+    stashActiveTab();
+    setWorkflowId(id);
+    setWorkflowName(spec.subflowName);
+    setHistory([]);
+    setFuture([]);
+    syncDocument(createAiSubflowDocument(spec.kind), {}, true);
+    setOpenTabIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    setAiScaffoldRequest(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiScaffoldRequest?.requestId]);
 
   useEffect(() => {
     const protectUnsavedChanges = (event: BeforeUnloadEvent) => {
@@ -1183,6 +1209,21 @@ function App() {
       window.setTimeout(() => setNotice(''), 2200);
       return;
     }
+    // AI entries compose from valid primitives: a `run.workflow` delegation task
+    // plus a scaffolded catalog-backed AI sub-flow in a new tab. The scaffold
+    // runs in a post-commit effect so the parent tab is stashed with the new
+    // task included (a setTimeout would capture a stale document).
+    if (taskType === 'llm-call' || taskType === 'ai-agent-call') {
+      const spec = getAiTaskSpec(taskType);
+      const next = addTopLevelAiTask(document, taskType);
+      const createdName = Object.keys(next.do?.[next.do.length - 1] || {})[0];
+      setSelectedId(`/do/${createdName}`);
+      syncDocument(next);
+      setAiScaffoldRequest({ kind: taskType, requestId: Date.now() });
+      setNotice(`Added ${spec.label} — scaffolding ${spec.subflowName} sub-flow`);
+      window.setTimeout(() => setNotice(''), 2400);
+      return;
+    }
     const next = addTopLevelTask(document, taskType);
     const createdName = Object.keys(next.do?.[next.do.length - 1] || {})[0];
     setSelectedId(`/do/${createdName}`);
@@ -1408,7 +1449,13 @@ function App() {
         window.setTimeout(() => setNotice(''), 2200);
         return;
       }
-      const subflowSpec = `document:
+      // AI sub-flows scaffold from their catalog-backed document builder.
+      const aiSpec = AI_TASK_SPECS.find(
+        (candidate) => candidate.subflowNamespace === namespace && candidate.subflowName === name,
+      );
+      const subflowSpec = aiSpec
+        ? serializeWorkflow(createAiSubflowDocument(aiSpec.kind), 'yaml')
+        : `document:
   dsl: "1.0.3"
   namespace: "${namespace}"
   name: "${name}"

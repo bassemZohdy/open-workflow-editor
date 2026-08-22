@@ -142,7 +142,8 @@ const paletteItems: PaletteItem[] = [
     group: 'Events',
   },
 
-  // AI task families (prototype — see TODO.md “AI task families”).
+  // AI task families — composed from valid primitives (sub-flow delegation +
+  // catalog-backed provider; see workflowModel.AI_TASK_SPECS).
   {
     type: 'llm-call',
     label: 'LLM call',
@@ -150,8 +151,7 @@ const paletteItems: PaletteItem[] = [
     icon: '◈',
     color: 'magenta',
     group: 'AI',
-    comingSoon: true,
-    plan: 'Provider/model, prompt template, parameters, context binding, response mapping, retry.',
+    plan: 'Adds an AI sub-flow delegation task + scaffolds the catalog-backed provider sub-flow.',
   },
   {
     type: 'ai-agent-call',
@@ -160,8 +160,7 @@ const paletteItems: PaletteItem[] = [
     icon: '◮',
     color: 'magenta',
     group: 'AI',
-    comingSoon: true,
-    plan: 'Agent definition (use.agents), goal, tool allowlist, memory & limits, response mapping.',
+    plan: 'Adds an AI sub-flow delegation task + scaffolds the agent sub-flow.',
   },
 ];
 
@@ -215,7 +214,16 @@ export function getTaskIcon(taskType?: string, task?: Record<string, unknown>): 
     }
     return '↗';
   }
+  if (isAiDelegation(task)) {
+    return (task?.run as { workflow?: { name?: string } })?.workflow?.name === 'ai-agent' ? '◮' : '◈';
+  }
   return paletteItems.find((item) => item.type === taskType)?.icon || '↳';
+}
+
+/** True when a `run` task delegates into the `ai` namespace (AI sub-flow). */
+export function isAiDelegation(task?: Record<string, unknown>): boolean {
+  const workflow = (task?.run as { workflow?: { namespace?: string } } | undefined)?.workflow;
+  return Boolean(workflow && workflow.namespace === 'ai');
 }
 
 export function getTaskSubtitle(taskType?: string, task?: Record<string, unknown>): string {
@@ -236,6 +244,10 @@ export function getTaskSubtitle(taskType?: string, task?: Record<string, unknown
     }
     return 'HTTP call';
   }
+  if (isAiDelegation(task)) {
+    const subflowName = (task?.run as { workflow?: { name?: string } })?.workflow?.name || 'ai';
+    return `ai: ${subflowName}`;
+  }
   return taskSubtitles[taskType as TaskType] || taskType;
 }
 
@@ -255,6 +267,7 @@ export function getTaskColor(taskType?: string, task?: Record<string, unknown>):
     }
     return 'violet';
   }
+  if (isAiDelegation(task)) return 'magenta';
   return taskColors[taskType as TaskType] || 'blue';
 }
 

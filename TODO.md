@@ -3,8 +3,8 @@
 > **Status legend:** `[x]` done · `[~]` in progress · `[ ]` pending.
 > This file is the source of truth for task status. Update the board as work progresses (see the final section for conventions).
 
-<!-- loop-review-state: consecutive_clean=1, last_check=2026-08-23T03:35:00 -->
-<!-- loop-review-note: typecheck clean, 65 unit tests pass, TODO board (tasks 24-29) matches in-flight code changes; no drift found -->
+<!-- loop-review-state: consecutive_clean=1, last_check=2026-08-23T03:52:00 -->
+<!-- loop-review-note: Task 16 now genuinely shipped (palette enabled, AiTaskCard.tsx, aiProviderBridge.js, docs/ai-tasks.md); typecheck clean, 69/69 unit tests pass; board's "all closed" claim matches reality -->
 
 ## Goal
 
@@ -14,27 +14,26 @@ Build a real, production-ready "VS Code for Open Workflow Specifications": a bro
 
 ## Open Task Board
 
-| #   | Task                                           | Status        | Notes                                                                                            |
-| --- | ---------------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------ |
-| 16  | AI task families (`llm-call`, `ai-agent-call`) | `[ ]` PLANNED | Palette placeholder ready; implementation waits on DSL/schema support (see design section below) |
+All tracked tasks are closed ✓ — see the Archive below. Task 16 was implemented via valid-DSL composition (sub-flow delegation + catalog-backed providers, per `docs/ai-tasks.md`) instead of waiting for native DSL keys; the native types remain a future option.
 
-**Round 3 (2026-08-23) closed items — see Archive below for details:** Task 24 (parallel flakes root-caused & re-enabled), 25 (palette group reorder), 26 (per-workflow theme overrides), 27 (canvas multi-select + bulk ops), 28 (canvas-scoped palette commands auto-switch), 29 (git workflow hardening, repo-side).
-
----
+**Next candidates:** wire a real provider into `server/aiProviderBridge.js` (deployment-specific; needs provider keys + audit wiring); revisit native `llm-call`/`ai-agent-call` task keys if the Open Workflow spec adds them; enable branch protection in GitHub settings (see `CONTRIBUTING.md`).
 
 ## Planned: AI task families (design phase)
 
-The task palette now shows an **AI** group with `llm-call` and `ai-agent-call` marked _coming soon_ (not draggable, disabled in the command palette, guarded in `addPaletteTask`). Neither exists in Open Workflow 1.0.3 yet — implementation waits for the DSL/schema to accept the task keys. Recommended surface, following the existing editor architecture (`use.functions` + `call` pattern, `run.workflow` decomposition):
+## Delivered: AI task families (Task 16) — composition design
 
-| Piece                                 | Recommendation                                                                                                                                                                                                                                                                                                                                               |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `LlmCallTaskEditor.tsx` inspector     | Provider + model selectors, multi-line prompt template with `${…}` expression autocomplete, parameters (temperature / max tokens / top-p), context binding (input, context, catalogs → prompt variables), response mapping (model output → task `output`), timeout & retry (reuse `try`/`catch` pattern), "Test prompt" button → server-side provider bridge |
-| `AiAgentCallTaskEditor.tsx` inspector | Agent name from a document-level `use.agents` manager, goal/instructions, tool allowlist, memory scope, delegation model (recursive `run.workflow` pattern), limits/timeouts, response mapping                                                                                                                                                               |
-| `use.agents` document manager         | Mirror `use.functions` / `use.catalogs` in the Inspector default view (doc-settings)                                                                                                                                                                                                                                                                         |
-| Canvas styling                        | Magenta accents for AI nodes, subtitles (`llm: <model>` / `agent: <name>`), mini-map color entry                                                                                                                                                                                                                                                             |
-| Template catalog                      | `ai-orchestration` pattern (LLM call → tool/agent branch → output mapping)                                                                                                                                                                                                                                                                                   |
-| Security                              | Provider keys live server-side (`server/aiProviderBridge.js`); the browser sends only prompt + selected model; audit + rate limiting mirror the gateway contract                                                                                                                                                                                             |
-| Enabling flag                         | Flip `comingSoon: false` in `src/taskMeta.ts` + add `TASK_TEMPLATES` + inspector + node styling once the schema accepts the keys                                                                                                                                                                                                                             |
+The palette **AI** group is live (`LLM call` ◈, `AI agent call` ◮). Since Open Workflow 1.0.3 has no native AI task keys, the implementation composes them from the most suitable valid primitives: **sub-flow delegation** (`run.workflow` → `ai` namespace) with a **catalog-backed provider** (`use.catalogs`) and a **runnable script contract** that production runtimes replace with a provider bridge.
+
+| Piece            | What shipped                                                                                                                                                                                                                         |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Palette entries  | `comingSoon` removed; adding one inserts a delegation task (`run.workflow` → `ai/prompt-llm` / `ai/ai-agent`) and auto-scaffolds the catalog-backed sub-flow in a new tab (post-commit effect so the parent tab keeps the new task). |
+| Sub-flow builder | `workflowModel.createAiSubflowDocument` / `addTopLevelAiTask` / `AI_TASK_SPECS`; schema-valid (unit-tested via `parseWorkflow`).                                                                                                     |
+| Script contracts | `scriptContract.AI_LLM_SCRIPT` / `AI_AGENT_SCRIPT` — demo-runnable stubs reading `catalogs['ai-providers']` / `catalogs.agents`; `server/aiProviderBridge.js` reference adapter (validation, server-side keys, 64 KiB limits).       |
+| Inspector        | `AiTaskCard` — shown for `run` tasks targeting the `ai` namespace; explains the composition + one-click open/scaffold.                                                                                                               |
+| Canvas           | AI-delegated nodes: magenta accent, `ai: <subflow>` subtitle, `◈`/`◮` icons (`taskMeta.isAiDelegation`).                                                                                                                             |
+| Template         | `ai-orchestration` catalog pattern (capture → LLM → agent → map → emit).                                                                                                                                                             |
+| Docs             | `docs/ai-tasks.md` (full design + contracts), README/ide-parity/CHANGELOG updated.                                                                                                                                                   |
+| Tests            | 4 new unit tests (sub-flow docs valid, delegation task + graph, AI styling, all templates parse) + 2 E2E (palette scaffold flow, template catalog).                                                                                  |
 
 ---
 

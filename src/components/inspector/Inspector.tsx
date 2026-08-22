@@ -1,9 +1,11 @@
-import { useState, useEffect, type DragEvent } from 'react';
+import { useState, useEffect, useMemo, type DragEvent } from 'react';
 import {
+  AI_TASK_SPECS,
   updateTopLevelTaskConfig,
   updateTopLevelTaskField,
   updateTopLevelTaskName,
 } from '../../workflowModel';
+import { AiTaskCard } from './AiTaskCard';
 import { formatError, formatJsonInput, objectToPairs, objectToCatalogEntries } from '../../formatters';
 import { taskColors } from '../../taskMeta';
 import { validateJavaScriptFunction } from '../../scriptContract';
@@ -150,6 +152,14 @@ export function Inspector({
   const selectedSignature = selected
     ? JSON.stringify({ name: selected.name, type: selected.type, task: selected.task })
     : '';
+
+  // AI delegation card: shown when a `run` task targets the `ai` namespace.
+  const aiSubflowSpec = useMemo(() => {
+    if (runMode !== 'subflow') return undefined;
+    return AI_TASK_SPECS.find(
+      (spec) => spec.subflowNamespace === subflowNamespace && spec.subflowName === subflowName,
+    );
+  }, [runMode, subflowName, subflowNamespace]);
 
   useEffect(() => {
     setName(selected?.name || '');
@@ -1130,6 +1140,12 @@ export function Inspector({
         )}
         {selected.type === 'run' && (
           <>
+            {runMode === 'subflow' && aiSubflowSpec && onOpenSubflow && (
+              <AiTaskCard
+                spec={aiSubflowSpec}
+                onOpenSubflow={() => onOpenSubflow(subflowName, subflowNamespace, subflowVersion)}
+              />
+            )}
             <label className="field">
               <span>
                 Run mode <small>run</small>

@@ -22,6 +22,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Canvas multi-select** — modifier-click additive selection (Ctrl/Cmd/Shift), rubber-band selection, and bulk duplicate/delete from a multi-selection context menu. (Task 27)
 - Canvas-scoped command-palette entries (zoom, fit, mini-map) now **auto-switch to the canvas view** instead of rendering disabled. (Task 28)
 
+### Added (Task 16 — AI task families, composition-based)
+
+- **Palette AI group is live**: `LLM call` (◈) and `AI agent call` (◮) add a valid `run.workflow` delegation task and auto-scaffold the catalog-backed sub-flow (`ai/prompt-llm`, `ai/ai-agent`) in a new tab. Composition instead of new DSL keys — see `docs/ai-tasks.md`.
+- `workflowModel` builders: `AI_TASK_SPECS`, `createAiSubflowDocument`, `addTopLevelAiTask`; catalog-backed provider entries (`ai-providers` / `agents`).
+- Runnable contract stubs (`AI_LLM_SCRIPT`, `AI_AGENT_SCRIPT`) + server-side reference bridge `server/aiProviderBridge.js` (validation, server-only keys, 64 KiB limits).
+- `AiTaskCard` inspector card, magenta AI node styling (`ai: <subflow>`), `ai-orchestration` catalog template.
+- Tests: 4 unit + 2 E2E; suite now **69 unit / 63 E2E (parallel)**.
+
 ### Fixed
 
 - **Canvas graph completeness (root cause of the Task 24/27 divergence):** the SDK semantic graph silently omitted top-level tasks that stand disconnected mid-list, so duplicated/de-then'ed tasks existed in the document but never rendered on the canvas. `createFlowGraph` now appends any missing top-level document tasks, and `duplicateTopLevelTask` appends copies at the end of the `do` list (same as palette adds). Unit-tested. (Tasks 24/27)

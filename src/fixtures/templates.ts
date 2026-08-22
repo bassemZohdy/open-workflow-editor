@@ -258,4 +258,62 @@ do:
         message: "Your order total is \${ $context.totalWithTax }"
 `,
   },
+  {
+    id: 'ai-orchestration',
+    title: 'AI Orchestration (LLM + Agent)',
+    icon: '🤖',
+    description:
+      'Delegate prompt/agent work to catalog-backed AI sub-flows (ai/prompt-llm, ai/ai-agent), then map the outcome and emit an event. Sub-flows scaffold from the editor’s AI palette tasks.',
+    category: 'Automation',
+    tags: ['catalogs', 'run', 'workflow', 'ai'],
+    specification: `document:
+  dsl: "1.0.3"
+  namespace: templates
+  name: ai-orchestration
+  version: "1.0.0"
+  metadata:
+    category: automation
+    pattern: ai-orchestration
+use:
+  catalogs:
+    ai-providers:
+      endpoint: https://api.example.ai/v1/chat
+    agents:
+      endpoint: https://api.example.ai/v1/agent
+do:
+  - captureRequest:
+      set:
+        prompt: "\${ $input.prompt }"
+        goal: "\${ $input.goal }"
+      then: delegateLlm
+  - delegateLlm:
+      run:
+        workflow:
+          namespace: ai
+          name: prompt-llm
+          version: "0.1.0"
+      then: delegateAgent
+  - delegateAgent:
+      run:
+        workflow:
+          namespace: ai
+          name: ai-agent
+          version: "0.1.0"
+      then: mapOutcome
+  - mapOutcome:
+      set:
+        llmSummary: "\${ $context.delegateLlm.llmResult }"
+        agentOutcome: "\${ $context.delegateAgent.agentResult }"
+      then: emitReady
+  - emitReady:
+      emit:
+        event:
+          with:
+            type: com.example.ai.orchestrated
+            source: https://api.example.ai/events
+            data:
+              summary: "\${ $context.llmSummary }"
+              outcome: "\${ $context.agentOutcome }"
+`,
+  },
 ];

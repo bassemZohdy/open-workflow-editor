@@ -27,9 +27,11 @@ import {
   recordWorkflowRevision,
 } from './workflowStore';
 import {
+  addTopLevelAiTask,
   addTopLevelTask,
   autoLayoutFlow,
   connectTopLevelTasks,
+  createAiSubflowDocument,
   createFlowGraph,
   duplicateTopLevelTask,
   disconnectTopLevelTasks,
@@ -51,6 +53,7 @@ import { isValidExpression } from './components/common/ExpressionInput';
 import { WORKFLOW_TEMPLATES } from './fixtures/templates';
 import { computeLineDiff, summarizeDiff } from './diffUtils';
 import { getTaskColor, getTaskIcon, getTaskSubtitle } from './taskMeta';
+import { validateJavaScriptFunction } from './scriptContract';
 import type { TaskDefinition, WorkflowDocument } from './types';
 
 describe('reorderWorkflowIds', () => {
@@ -1085,5 +1088,57 @@ do:
     expect(ids).toContain('/do/firstTask');
     expect(ids).toContain('/do/secondTask');
     expect(ids).toContain('/do/thirdTask');
+  });
+});
+
+describe('AI task families (Task 16)', () => {
+  it('builds a schema-valid LLM sub-flow document (catalog + script stub)', () => {
+    const doc = createAiSubflowDocument('llm-call');
+    const parsed = parseWorkflow(serializeWorkflow(doc, 'yaml'));
+    expect(parsed.document.document?.name).toBe('prompt-llm');
+    expect(parsed.document.document?.namespace).toBe('ai');
+    expect(
+      (parsed.document.use?.catalogs?.['ai-providers'] as { endpoint?: string } | undefined)?.endpoint,
+    ).toContain('api.example.ai');
+    const invoke = parsed.document.do?.[0]?.invokeLlm;
+    expect(invoke?.run?.script?.language).toBe('javascript');
+    expect(validateJavaScriptFunction(invoke?.run?.script?.code)).toEqual({ valid: true });
+  });
+
+  it('builds a schema-valid agent sub-flow document', () => {
+    const doc = createAiSubflowDocument('ai-agent-call');
+    const parsed = parseWorkflow(serializeWorkflow(doc, 'yaml'));
+    expect(parsed.document.document?.name).toBe('ai-agent');
+    expect(
+      (parsed.document.use?.catalogs?.['agents'] as { endpoint?: string } | undefined)?.endpoint,
+    ).toContain('api.example.ai');
+    const invoke = parsed.document.do?.[0]?.runAgent;
+    expect(validateJavaScriptFunction(invoke?.run?.script?.code)).toEqual({ valid: true });
+    expect(parsed.document.do?.[1]?.captureResult?.set?.agentResult).toContain('$context.runAgent.outcome');
+  });
+
+  it('adds a schema-valid AI delegation task (run.workflow to the ai namespace)', () => {
+    const { document } = parseWorkflow(NEW_WORKFLOW);
+    let next = addTopLevelAiTask(document, 'llm-call');
+    next = addTopLevelAiTask(next, 'ai-agent-call');
+    const parsed = parseWorkflow(serializeWorkflow(next, 'yaml'));
+    const names = (parsed.document.do ?? []).map((item) => Object.keys(item)[0]);
+    expect(names).toContain('aiLlmTask');
+    expect(names).toContain('aiAgentTask');
+    const llm = parsed.document.do?.find((item) => 'aiLlmTask' in item)?.['aiLlmTask'];
+    expect(llm?.run?.workflow).toEqual({ namespace: 'ai', name: 'prompt-llm', version: '0.1.0' });
+    // The delegation task shows in the canvas graph.
+    const flow = createFlowGraph(parsed.document);
+    expect(flow.nodes.map((node) => node.id)).toContain('/do/aiLlmTask');
+    expect(flow.nodes.map((node) => node.id)).toContain('/do/aiAgentTask');
+    // AI-delegated nodes render with the magenta AI styling contract.
+    expect(getTaskColor('run', llm as never)).toBe('magenta');
+    expect(getTaskSubtitle('run', llm as never)).toBe('ai: prompt-llm');
+  });
+
+  it('every catalogued workflow template parses as a valid document', () => {
+    for (const template of WORKFLOW_TEMPLATES) {
+      expect(() => parseWorkflow(template.specification), template.id).not.toThrow();
+    }
   });
 });
