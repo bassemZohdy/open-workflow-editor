@@ -4150,6 +4150,14 @@ button:focus-visible,
 .library-item.active .library-icon {
   color: var(--blue);
 }
+.library-item.dragging {
+  opacity: 0.45;
+}
+.library-item.drop-target {
+  outline: 2px dashed var(--blue);
+  outline-offset: -2px;
+  background: var(--blue-soft);
+}
 .library-name {
   flex: 1;
   min-width: 0;
@@ -4295,6 +4303,14 @@ button:focus-visible,
 }
 .settings-action-row .button {
   font-size: 11px;
+}
+.settings-profile-actions {
+  display: inline-flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.settings-file-input {
+  display: none;
 }
 .settings-field {
   display: flex;

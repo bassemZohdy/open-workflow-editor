@@ -19,6 +19,7 @@ import {
   assertWorkflowPersistence,
   parseWorkflowLibrary,
   removeWorkflowRecord,
+  reorderWorkflowIds,
   serializeWorkflowLibrary,
   uniqueWorkflowName,
   upsertWorkflowRecord,
@@ -32,6 +33,7 @@ import {
   createFlowGraph,
   duplicateTopLevelTask,
   disconnectTopLevelTasks,
+  getBreadcrumbPath,
   NEW_WORKFLOW,
   parseWorkflow,
   removeTopLevelTask,
@@ -50,6 +52,19 @@ import { WORKFLOW_TEMPLATES } from './fixtures/templates';
 import { computeLineDiff, summarizeDiff } from './diffUtils';
 import { getTaskColor, getTaskIcon, getTaskSubtitle } from './taskMeta';
 import type { TaskDefinition, WorkflowDocument } from './types';
+
+describe('reorderWorkflowIds', () => {
+  it('moves the dragged id to the target position', () => {
+    expect(reorderWorkflowIds(['a', 'b', 'c', 'd'], 'c', 'a')).toEqual(['c', 'a', 'b', 'd']);
+    expect(reorderWorkflowIds(['a', 'b', 'c', 'd'], 'a', 'c')).toEqual(['b', 'c', 'a', 'd']);
+  });
+
+  it('returns the input unchanged when ids are missing or identical', () => {
+    expect(reorderWorkflowIds(['a', 'b'], 'a', 'a')).toEqual(['a', 'b']);
+    expect(reorderWorkflowIds(['a', 'b'], 'x', 'a')).toEqual(['a', 'b']);
+    expect(reorderWorkflowIds(['a', 'b'], 'a', 'x')).toEqual(['a', 'b']);
+  });
+});
 
 describe('workflow model adapter', () => {
   it('runs restricted JavaScript in the Node sandbox boundary', async () => {
@@ -949,5 +964,78 @@ describe('workflow model adapter', () => {
     };
     const issues = validateGraph(invalidFnDoc);
     expect(issues.some((i) => i.path.includes('/use/functions/badFn'))).toBe(true);
+  });
+});
+
+describe('getBreadcrumbPath', () => {
+  const nestedDoc: WorkflowDocument = {
+    document: { name: 'nested' },
+    do: [
+      { prepare: { set: { ok: true }, then: 'fanout' } },
+      {
+        fanout: {
+          fork: {
+            compete: false,
+            branches: [{ sendEmail: { call: 'email-service' } }, { sendSms: { call: 'sms-service' } }],
+          },
+          then: 'loop',
+        },
+      },
+      {
+        loop: {
+          for: { each: 'record', in: '${ $context.records }', at: 'index' },
+          do: [
+            {
+              guarded: {
+                try: [{ risky: { call: 'svc' } }],
+                catch: { do: [{ fallback: { set: { recovered: true } } }] },
+              },
+            },
+          ],
+        },
+      },
+    ],
+  };
+
+  it('returns an empty path for null or non-task ids', () => {
+    expect(getBreadcrumbPath(nestedDoc, null)).toEqual([]);
+    expect(getBreadcrumbPath(nestedDoc, 'root-entry-node')).toEqual([]);
+  });
+
+  it('builds a top-level path of do / <name>', () => {
+    expect(getBreadcrumbPath(nestedDoc, '/do/prepare')).toEqual([
+      { label: 'do', taskId: null },
+      { label: 'prepare', taskId: '/do/prepare' },
+    ]);
+  });
+
+  it('walks into fork branches', () => {
+    expect(getBreadcrumbPath(nestedDoc, '/do/fanout/fork/branches/sendSms')).toEqual([
+      { label: 'do', taskId: null },
+      { label: 'fanout', taskId: '/do/fanout' },
+      { label: 'fork', taskId: null },
+      { label: 'branches', taskId: null },
+      { label: 'sendSms', taskId: '/do/fanout/fork/branches/sendSms' },
+    ]);
+  });
+
+  it('walks through for.do and try/catch nesting', () => {
+    expect(getBreadcrumbPath(nestedDoc, '/do/loop/do/guarded/try/risky')).toEqual([
+      { label: 'do', taskId: null },
+      { label: 'loop', taskId: '/do/loop' },
+      { label: 'do', taskId: null },
+      { label: 'guarded', taskId: '/do/loop/do/guarded' },
+      { label: 'try', taskId: null },
+      { label: 'risky', taskId: '/do/loop/do/guarded/try/risky' },
+    ]);
+    expect(getBreadcrumbPath(nestedDoc, '/do/loop/do/guarded/catch/do/fallback')).toEqual([
+      { label: 'do', taskId: null },
+      { label: 'loop', taskId: '/do/loop' },
+      { label: 'do', taskId: null },
+      { label: 'guarded', taskId: '/do/loop/do/guarded' },
+      { label: 'catch', taskId: null },
+      { label: 'do', taskId: null },
+      { label: 'fallback', taskId: '/do/loop/do/guarded/catch/do/fallback' },
+    ]);
   });
 });

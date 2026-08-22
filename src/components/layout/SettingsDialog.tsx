@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { AppTheme } from '../../types';
 
 export interface SettingsDialogProps {
@@ -18,6 +18,8 @@ export interface SettingsDialogProps {
   initialGatewayUrl: string;
   initialAuthToken: string;
   onGatewayConfigApply: (url: string, token: string) => void;
+  onExportProfile: () => void;
+  onImportProfile: (json: string) => void;
 }
 
 export function SettingsDialog({
@@ -37,9 +39,12 @@ export function SettingsDialog({
   initialGatewayUrl,
   initialAuthToken,
   onGatewayConfigApply,
+  onExportProfile,
+  onImportProfile,
 }: SettingsDialogProps) {
   const [gatewayUrl, setGatewayUrl] = useState(initialGatewayUrl);
   const [authToken, setAuthToken] = useState(initialAuthToken);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -142,6 +147,43 @@ export function SettingsDialog({
                 Reset to defaults
               </button>
             </div>
+          </section>
+
+          <section className="settings-section">
+            <h3>Settings profiles</h3>
+            <div className="settings-row settings-action-row">
+              <span>Export / import workspace settings as JSON</span>
+              <span className="settings-profile-actions">
+                <button type="button" className="button secondary" onClick={onExportProfile}>
+                  Export
+                </button>
+                <button
+                  type="button"
+                  className="button secondary"
+                  onClick={() => importInputRef.current?.click()}
+                >
+                  Import
+                </button>
+              </span>
+            </div>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="settings-file-input"
+              aria-label="Import settings profile"
+              onChange={(event) => {
+                const [file] = event.target.files || [];
+                event.target.value = '';
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = () => onImportProfile(String(reader.result || ''));
+                reader.readAsText(file);
+              }}
+            />
+            <p className="settings-hint">
+              Profiles cover theme, mini-map, panels, and gateway URL. Bearer tokens are never exported.
+            </p>
           </section>
 
           <section className="settings-section">

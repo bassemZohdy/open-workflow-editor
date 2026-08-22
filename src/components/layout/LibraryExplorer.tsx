@@ -1,4 +1,4 @@
-import { useMemo, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
 
 export interface LibraryWorkflowRow {
   id: string;
@@ -14,6 +14,9 @@ interface LibraryExplorerProps {
   onOpen: (id: string) => void;
   onRename: (id: string, nextName: string) => void;
   onDelete: (id: string) => void;
+  onReorderWorkflows?: (draggedId: string, overId: string) => void;
+  /** Increment to scroll the active row back into view (reveal-active command). */
+  revealRequestId?: number;
 }
 
 function LibraryRow({
@@ -21,14 +24,18 @@ function LibraryRow({
   onOpen,
   onRename,
   onDelete,
+  onReorderWorkflows,
 }: {
   workflow: LibraryWorkflowRow;
   onOpen: (id: string) => void;
   onRename: (id: string, nextName: string) => void;
   onDelete: (id: string) => void;
+  onReorderWorkflows?: (draggedId: string, overId: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(workflow.name);
+  const [dragging, setDragging] = useState(false);
+  const [dropTarget, setDropTarget] = useState(false);
 
   const commit = () => {
     setEditing(false);
@@ -50,11 +57,42 @@ function LibraryRow({
     }
   };
 
+  const beginDrag = (event: DragEvent<HTMLDivElement>) => {
+    if (!onReorderWorkflows) return;
+    event.dataTransfer.setData('application/open-workflow-library', workflow.id);
+    event.dataTransfer.effectAllowed = 'move';
+    setDragging(true);
+  };
+
+  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+    if (!onReorderWorkflows) return;
+    if (!event.dataTransfer.types.includes('application/open-workflow-library')) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    setDropTarget(true);
+  };
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    if (!onReorderWorkflows) return;
+    event.preventDefault();
+    const draggedId = event.dataTransfer.getData('application/open-workflow-library');
+    setDropTarget(false);
+    if (draggedId && draggedId !== workflow.id) onReorderWorkflows(draggedId, workflow.id);
+  };
+
   return (
     <div
-      className={`library-item ${workflow.isActive ? 'active' : ''}`}
+      className={`library-item ${workflow.isActive ? 'active' : ''} ${dragging ? 'dragging' : ''} ${dropTarget ? 'drop-target' : ''}`}
       title={workflow.name}
+      role="option"
+      aria-selected={workflow.isActive}
+      draggable={Boolean(onReorderWorkflows)}
       onClick={() => onOpen(workflow.id)}
+      onDragStart={beginDrag}
+      onDragEnd={() => setDragging(false)}
+      onDragOver={handleDragOver}
+      onDragLeave={() => setDropTarget(false)}
+      onDrop={handleDrop}
     >
       <span className="library-icon">{workflow.isSaved ? '⬡' : '✎'}</span>
       {editing ? (
@@ -108,18 +146,40 @@ function LibraryRow({
 
 /**
  * VS Code Explorer analog: a compact saved-workflows list with open / rename /
- * delete and a dirty indicator for unsaved tabs. Sorted alphabetically.
- * Rendered inside the left-rail "Workflows" accordion section (see Palette.tsx).
+ * delete, drag-to-reorder, and a dirty indicator for unsaved tabs. Rows keep
+ * the order provided by the parent (which persists manual reordering); the
+ * active row auto-scrolls into view and responds to a reveal command.
  */
-export function LibraryExplorer({ workflows, onOpen, onRename, onDelete }: LibraryExplorerProps) {
-  const rows = useMemo(() => {
-    const sorted = [...workflows].sort((a, b) => a.name.localeCompare(b.name));
-    const activeFirst = [...sorted].sort((a, b) => Number(b.isActive) - Number(a.isActive));
-    return activeFirst;
-  }, [workflows]);
+export function LibraryExplorer({
+  workflows,
+  onOpen,
+  onRename,
+  onDelete,
+  onReorderWorkflows,
+  revealRequestId = 0,
+}: LibraryExplorerProps) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const rows = useMemo(() => workflows, [workflows]);
+  const activeId = workflows.find((workflow) => workflow.isActive)?.id ?? null;
+  const prevActiveRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (activeId !== prevActiveRef.current) {
+      prevActiveRef.current = activeId;
+      listRef.current?.querySelector('.library-item.active')?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [activeId]);
+
+  useEffect(() => {
+    if (revealRequestId > 0) {
+      listRef.current
+        ?.querySelector('.library-item.active')
+        ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }, [revealRequestId]);
 
   return (
-    <div className="library-list" role="listbox" aria-label="Saved workflows">
+    <div className="library-list" role="listbox" aria-label="Saved workflows" ref={listRef}>
       {rows.length === 0 && <div className="library-empty">No saved workflows yet</div>}
       {rows.map((workflow) => (
         <LibraryRow
@@ -128,6 +188,7 @@ export function LibraryExplorer({ workflows, onOpen, onRename, onDelete }: Libra
           onOpen={onOpen}
           onRename={onRename}
           onDelete={onDelete}
+          onReorderWorkflows={onReorderWorkflows}
         />
       ))}
     </div>

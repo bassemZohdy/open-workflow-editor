@@ -579,6 +579,77 @@ export function getTopLevelTask(document: WorkflowDocument, nodeId: string | nul
   };
 }
 
+/** A single segment of the canvas breadcrumb chain. */
+export interface BreadcrumbSegment {
+  label: string;
+  /** Node id to select when clicked; `null` for structural separators (`do`, `fork`, `branches`, `try`, `catch`). */
+  taskId: string | null;
+}
+
+const taskNameOf = (item: TaskItem): string => Object.keys(item)[0];
+
+/**
+ * Resolve a canvas node id into a breadcrumb chain that walks through
+ * container tasks (`do`, `for`, `fork`, `try`/`catch`) down to the selected
+ * task. Top-level tasks produce `[do, <name>]`; nested tasks produce paths
+ * like `do / processItems / do / transformRecord` or
+ * `do / dispatchParallelChannels / fork / branches / sendEmail`.
+ */
+export function getBreadcrumbPath(document: WorkflowDocument, nodeId: string | null): BreadcrumbSegment[] {
+  if (!nodeId || !nodeId.startsWith('/do/')) return [];
+  const parts = nodeId.split('/').filter(Boolean);
+  if (parts[0] !== 'do') return [];
+
+  const segments: BreadcrumbSegment[] = [{ label: 'do', taskId: null }];
+  let list: TaskItem[] = document.do ?? [];
+  let i = 1;
+
+  while (i < parts.length) {
+    const name = parts[i];
+    const item = list.find((entry) => taskNameOf(entry) === name);
+    if (!item) return [];
+    const task = item[name];
+    segments.push({ label: name, taskId: `/${parts.slice(0, i + 1).join('/')}` });
+
+    // `do` and `for` tasks both nest their sub-tasks under `task.do`.
+    if (Array.isArray(task.do)) {
+      if (parts[i + 1] !== 'do') return [];
+      segments.push({ label: 'do', taskId: null });
+      list = task.do;
+      i += 2;
+      continue;
+    }
+    if (task.fork && Array.isArray(task.fork.branches)) {
+      if (parts[i + 1] !== 'fork' || parts[i + 2] !== 'branches') return [];
+      segments.push({ label: 'fork', taskId: null }, { label: 'branches', taskId: null });
+      list = task.fork.branches as TaskItem[];
+      i += 3;
+      continue;
+    }
+    if (Array.isArray(task.try) || (task.catch && Array.isArray(task.catch.do))) {
+      if (Array.isArray(task.try) && parts[i + 1] === 'try') {
+        segments.push({ label: 'try', taskId: null });
+        list = task.try;
+        i += 2;
+        continue;
+      }
+      if (task.catch && Array.isArray(task.catch.do) && parts[i + 1] === 'catch' && parts[i + 2] === 'do') {
+        segments.push({ label: 'catch', taskId: null }, { label: 'do', taskId: null });
+        list = task.catch.do;
+        i += 3;
+        continue;
+      }
+      return [];
+    }
+
+    // Leaf task — no further nesting should remain in the id.
+    if (i !== parts.length - 1) return [];
+    i += 1;
+  }
+
+  return segments;
+}
+
 export function addTopLevelTask(document: WorkflowDocument, taskType: string): WorkflowDocument {
   const next = clone(document);
   const nextDo: TaskItem[] = next.do ?? [];

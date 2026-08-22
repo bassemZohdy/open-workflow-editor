@@ -82,7 +82,9 @@ Dismissed by outside click, `Esc`, or scroll; clamped to the viewport.
 `src/components/layout/LibraryExplorer.tsx` — left rail, above the task palette (VS Code Explorer analog).
 
 - The explorer is the **one canonical switcher** for saved workflows; open tabs (top bar) and Quick Open / command-palette entries are _derived_ surfaces, not parallel lists. The former header dropdown was removed to avoid three conflicting workflow lists with inconsistent naming.
-- Lists saved workflows (alphabetical, active row highlighted) plus unsaved tabs (marked with ✎ and a dirty dot).
+- Lists saved workflows (active row highlighted) plus unsaved tabs (marked with ✎ and a dirty dot).
+- **Drag-to-reorder rows:** HTML5 drag (`application/open-workflow-library`) with drop-target feedback; the manual order persists in `open-workflow-editor:library-order:v1` via the pure `workflowStore.reorderWorkflowIds` helper.
+- **Reveal active workflow:** the active row auto-scrolls into view on tab switch, and the Workflows header offers a "◎" reveal button for manual reveal.
 - Click to switch; double-click or ✎ to rename inline (Enter commits, Esc cancels, duplicate names rejected); ✕ deletes (confirm dialog; the active row uses the standard Delete-flow).
 - "＋" creates a new workflow; the title row shows a `saved`/`unsaved` chip for the active workflow.
 
@@ -92,7 +94,10 @@ Dismissed by outside click, `Esc`, or scroll; clamped to the viewport.
 
 ## 10. Breadcrumbs
 
-The static `Dubai Government cases /` prefix is replaced by a live chain: `workflow-name / do / <selected-task>`; the task segment is clickable (selects the node).
+The static `Dubai Government cases /` prefix is replaced by a live chain built by `workflowModel.getBreadcrumbPath`:
+
+- Root chain `workflow-name / do` always renders; selecting a task appends its segment (clickable — selects the node).
+- Selections inside containers resolve the full nesting chain — `for.do`, `fork.branches`, and `try`/`catch` — with clickable task segments at each level.
 
 ## 11. Settings dialog
 
@@ -101,6 +106,7 @@ The static `Dubai Government cases /` prefix is replaced by a live chain: `workf
 - **Appearance:** color theme, mini-map toggle.
 - **Panels:** task palette rail, inspector rail, runtime console visibility; reset panel widths to defaults.
 - **Runtime gateway:** gateway URL and bearer token. They are stored in the same localStorage keys the Runtime console uses and broadcast through `open-workflow:gateway-config-changed`; the console picks them up and switches to gateway mode when a URL is applied.
+- **Settings profiles:** export the workspace settings as JSON (theme, mini-map, panel widths, rail sections, panel visibility, gateway URL) and re-import them from file. Bearer tokens are deliberately excluded from exports.
 
 ## 12. Zoom & mini-map persistence
 
@@ -141,6 +147,7 @@ The static `Dubai Government cases /` prefix is replaced by a live chain: `workf
 | `open-workflow-editor:panel-widths:v1`                      | Resizable rail widths         |
 | `open-workflow-editor:canvas-prefs:v1`                      | Canvas preferences (mini-map) |
 | `open-workflow-editor:viewports:v1`                         | Per-workflow pan/zoom         |
+| `open-workflow-editor:library-order:v1`                     | Manual workflow-library order |
 | `open-workflow-gateway-url` / `open-workflow-gateway-token` | Runtime gateway connection    |
 | `open-workflow-theme`                                       | Color theme                   |
 

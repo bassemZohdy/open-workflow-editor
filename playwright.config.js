@@ -3,6 +3,10 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: './tests',
   timeout: 30_000,
+  // Serial workers: full-parallel runs flaked on high-core machines (unrelated
+  // tests failing per run, all passing in isolation). TODO.md task #24 tracks
+  // the root-cause fix; until then determinism wins over wall-clock time.
+  workers: 1,
   fullyParallel: true,
   reporter: 'line',
   use: {

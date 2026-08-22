@@ -152,6 +152,21 @@ export function removeWorkflowRecord(workflows: WorkflowRecord[], id: string): W
   return workflows.filter((record) => record.id !== id);
 }
 
+/**
+ * Move `draggedId` to the position of `overId` in an id-ordered list.
+ * Returns a new array (unchanged if either id is missing or identical).
+ */
+export function reorderWorkflowIds(ids: string[], draggedId: string, overId: string): string[] {
+  if (draggedId === overId) return ids;
+  const from = ids.indexOf(draggedId);
+  const to = ids.indexOf(overId);
+  if (from === -1 || to === -1) return ids;
+  const next = [...ids];
+  next.splice(from, 1);
+  next.splice(to, 0, draggedId);
+  return next;
+}
+
 export function uniqueWorkflowName(workflows: WorkflowRecord[], baseName: string): string {
   const names = new Set(workflows.map((record) => record.name));
   if (!names.has(baseName)) return baseName;

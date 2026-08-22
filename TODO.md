@@ -9,31 +9,19 @@ Build a real, production-ready "VS Code for Open Workflow Specifications": a bro
 
 ---
 
-## Task Status Board — all delivered ✓
+## Open Task Board
 
-| #   | Task                                              | Status        | Notes                                                                                                                      |
-| --- | ------------------------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Code editor for Specification view (CodeMirror 6) | `[x]` DONE    | `SpecEditor.tsx` — highlighting, gutter, diagnostics, search, folding                                                      |
-| 2   | Command Palette (`Ctrl/Cmd+Shift+P`)              | `[x]` DONE    | `CommandPalette.tsx` — fuzzy search across actions/tasks/workflows/views                                                   |
-| 3   | Quick Open (`Ctrl/Cmd+P`)                         | `[x]` DONE    | `QuickOpenDialog.tsx` — open tabs + saved-workflow library                                                                 |
-| 4   | Drag-resizable side panels                        | `[x]` DONE    | `ResizeHandle.tsx` — left/right rails, persisted widths                                                                    |
-| 5   | Right-click context menus                         | `[x]` DONE    | `ContextMenu.tsx` — canvas nodes, pane, document tabs                                                                      |
-| 6   | Problems panel (aggregated diagnostics)           | `[x]` DONE    | `ProblemsPanel.tsx` — docked, click-to-navigate                                                                            |
-| 7   | Workspace-wide search (`Ctrl/Cmd+Shift+F`)        | `[x]` DONE    | Same quick-open dialog in search mode                                                                                      |
-| 8   | Live status bar                                   | `[x]` DONE    | `StatusBar.tsx` — selection, problems, cursor, engine/gateway state                                                        |
-| 9   | Global shortcuts in every view (spec view too)    | `[x]` DONE    | App-level capture-phase key handler + spec-view undo/redo/save                                                             |
-| 10  | Workflow Library explorer sidebar                 | `[x]` DONE    | `LibraryExplorer.tsx` — list, rename, delete, switcher, dirty indicator                                                    |
-| 11  | Drag tabs to reorder the tab bar                  | `[x]` DONE    | HTML5 drag with drop-target feedback on `DocumentTabs`                                                                     |
-| 12  | Live breadcrumbs bar                              | `[x]` DONE    | `workflow / do / <task>` chain with clickable task segment                                                                 |
-| 13  | Settings dialog (`Ctrl/Cmd+,`)                    | `[x]` DONE    | `SettingsDialog.tsx` — theme, panels, mini-map, gateway URL/token                                                          |
-| 14  | Minimap toggle & zoom controls w/ persistence     | `[x]` DONE    | `Ctrl+= / - / 0`, palette commands, per-workflow viewport restore                                                          |
-| 15  | Task palette grouped by function + AI group       | `[x]` DONE    | Flow control / Data & logic / Services / Events / AI (prototype entries)                                                   |
-| 16  | AI task families (`llm-call`, `ai-agent-call`)    | `[ ]` PLANNED | Palette placeholder ready; implementation waits on DSL/schema support                                                      |
-| 17  | Accordion sections in left & right panels         | `[x]` DONE    | Left: Workflows + Task palette sections (persisted). Right: clickable head toggles                                         |
-| 18  | Palette group accordions + accordion/minimize fix | `[x]` DONE    | Nested group accordions; auto-minimize rail when all sections collapse; scrollable workflow list                           |
-| 19  | Control audit: dedupe + relocate controls         | `[x]` DONE    | One validation indicator, slim banner, spec-bar + canvas-toolbar placement; see docs/ide-parity.md "Control placement map" |
+| #   | Task                                                        | Status        | Notes                                                                                                                                         |
+| --- | ----------------------------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| 16  | AI task families (`llm-call`, `ai-agent-call`)              | `[ ]` PLANNED | Palette placeholder ready; implementation waits on DSL/schema support (see design section below)                                              |
+| 24  | Root-cause E2E parallel flakes & re-enable parallel workers | `[ ]` PENDING | Full-parallel runs on high-core machines flaked (3 different tests across 2 runs); workers pinned to 1 in `playwright.config.js` as a stopgap |
+| 25  | Palette drag-to-reorder                                     | `[ ]` PENDING | Mirror the library-row drag pattern (`application/open-workflow-*`) for task palette groups                                                   |
+| 26  | Per-workflow theme overrides                                | `[ ]` PENDING | Currently theme is global (`open-workflow-theme`); add per-document override with fallback                                                    |
+| 27  | Canvas multi-select                                         | `[ ]` PENDING | Shift/Ctrl+click and rubber-band selection; bulk move/delete/duplicate                                                                        |
+| 28  | Command-palette UX review for canvas-scoped commands        | `[ ]` PENDING | Zoom / fit / mini-map entries render disabled in Specification view — confirm intent or auto-switch to canvas on invoke                       |
+| 29  | Git workflow hardening                                      | `[ ]` PENDING | Add protected `develop` branch + PR flow per project conventions (repo currently pushes straight to `main`)                                   |
 
-**Next candidates (not yet scheduled):** drag-and-drop reorder of the workflow library rows; deeper breadcrumbs into container tasks (`for.do`, `fork.branches`, `switch` cases); explorer "reveal active file" (+ follows active tab); per-workspace settings profiles (export/import JSON).
+**Scheduling note:** items 24–28 were surfaced by the Playwright review on 2026-08-22. Item 24's stopgap (serial workers) is already merged; the task tracks the real fix.
 
 ---
 
@@ -53,47 +41,61 @@ The task palette now shows an **AI** group with `llm-call` and `ai-agent-call` m
 
 ---
 
-## Completed Backlog (delivered in this round)
+## Review findings — 2026-08-22 Playwright pass
 
-### Task 10: Workflow Library explorer sidebar
+Findings from the full-app browser review (all against a clean dev server):
 
-- [x] `LibraryExplorer.tsx` — compact saved-workflows list in the left rail (VS Code Explorer analog), sorted with active row highlighted.
-- [x] One-click switch; inline rename (double-click or ✎, Enter/Esc commit/cancel, duplicate-name guard); delete with confirm (except active row, which uses the existing Delete dialog path).
-- [x] Dirty indicator for unsaved tabs; unsaved tabs appear as `✎` entries; "+ New" quick button.
-- [x] Renaming a non-active workflow updates the record, re-serializes the document name, and updates any open tab.
+- **E2E parallelism flakes (→ Task 24):** `npm run test:browser` at default worker count failed 1 test on run 1 and 3 different tests on run 2; every failing test passed in isolation and the full suite passes 57/57 with `--workers=1`. Stopgap: pinned `workers: 1` in `playwright.config.js`.
+- **CHANGELOG.md missing:** required by the project workflow; created in the same round (Keep-a-Changelog format, seeded from git history).
+- **Docs drift:** README test counts (56/50 → 62/57) and capability list lacked Tasks 20–23; `docs/ide-parity.md` lacked the library drag-reorder/reveal, deep breadcrumbs, settings-profiles sections and the `library-order:v1` persistence key. All updated in the same round.
+- **CI gaps:** no manual trigger (`workflow_dispatch`) and no build artifact upload; both added in the same round.
+- **Non-issues (checked, no action):** `Escape` in Specification view keeps the view mounted (an earlier suspected repro was a Vite HMR artifact during concurrent editing); console clean of errors/warnings across all reviewed surfaces; Tasks 20–23 verified live (draggable library rows, `workflow / do` breadcrumb, ◎ reveal button, settings profiles export/import).
 
-### Task 11: Drag tabs to reorder the tab bar
+---
 
-- [x] HTML5 drag on tabs (`application/open-workflow-tab`), drag-over highlight, drop reorders `openTabIds`; drag feedback cursor.
+## Verification Commands
 
-### Task 12: Live breadcrumbs bar
+```bash
+npm test             # Vitest unit tests (62)
+npm run test:browser # Playwright E2E tests (57, serial workers)
+npm run typecheck    # tsc --noEmit
+npm run lint         # ESLint
+npm run format:check # Prettier
+npm run build        # Production build
+```
 
-- [x] Replaces the static "Dubai Government cases /" prefix with `workflow / do / <task>`; task segment is clickable and appears when a task is selected.
-
-### Task 13: Settings dialog
-
-- [x] `Ctrl/Cmd+,` (and command palette entry) opens a modal with Appearance (theme, mini-map), Panels (task palette / inspector / runtime toggles, reset widths), and Runtime gateway (URL + bearer token).
-- [x] Gateway config persists to the same localStorage keys the Runtime console uses and fires `open-workflow:gateway-config-changed`; the Runtime console syncs and switches to gateway mode automatically when a URL is applied.
-
-### Task 14: Mini-map toggle & zoom controls with persistence
-
-- [x] `Ctrl/Cmd+=` / `Ctrl/Cmd+-` / `Ctrl/Cmd+0` (zoom in / out / reset) + command palette entries; mini-map toggle in the palette and Settings.
-- [x] Per-workflow viewport (pan/zoom) restored on open and persisted to localStorage (`open-workflow-editor:viewports:v1`); canvas prefs (`showMiniMap`) persisted (`open-workflow-editor:canvas-prefs:v1`).
-
-### Verification (2026-08-22)
+### Latest verification (2026-08-22)
 
 - [x] `npm run typecheck` — clean.
 - [x] `npm run lint` — clean.
 - [x] `npm run format:check` — clean.
-- [x] `npm test` — 56 unit tests pass (13 in `src/ideParity.test.ts`).
-- [x] `npm run test:browser` — **50 Playwright E2E tests pass** (7 new in `tests/ide-parity.spec.js` covering the library explorer, tab reorder, breadcrumbs, settings dialog, and zoom/minimap).
+- [x] `npm test` — **62 unit tests pass** (13 in `src/ideParity.test.ts`, +4 breadcrumb +2 reorder).
+- [x] `npm run test:browser` — **57 Playwright E2E tests pass** (serial; see Task 24 for the parallel-flake stopgap).
 - [x] `npm run build` — production bundle builds.
 
 ---
 
-## Archive — VS Code Parity Tasks 1–9 (completed earlier)
+## Archive — Delivered Tasks
 
-All nine items from the original gap analysis are done; per-task checklists were kept during delivery and are summarized here:
+### VS Code parity round 2 (Tasks 10–23)
+
+| #   | Task                                              | What shipped                                                                                        |
+| --- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| 10  | Workflow Library explorer sidebar                 | `LibraryExplorer.tsx` — list, rename, delete, switcher, dirty indicator                             |
+| 11  | Drag tabs to reorder the tab bar                  | HTML5 drag with drop-target feedback on `DocumentTabs`                                              |
+| 12  | Live breadcrumbs bar                              | `workflow / do / <task>` chain with clickable task segment                                          |
+| 13  | Settings dialog (`Ctrl/Cmd+,`)                    | Theme, panels, mini-map, gateway URL/token                                                          |
+| 14  | Minimap toggle & zoom controls w/ persistence     | `Ctrl+= / - / 0`, palette commands, per-workflow viewport restore                                   |
+| 15  | Task palette grouped by function + AI group       | Flow control / Data & logic / Services / Events / AI (prototype entries)                            |
+| 17  | Accordion sections in left & right panels         | Left: Workflows + Task palette sections (persisted). Right: clickable head toggles                  |
+| 18  | Palette group accordions + accordion/minimize fix | Nested group accordions; auto-minimize rail when all sections collapse; scrollable workflow list    |
+| 19  | Control audit: dedupe + relocate controls         | One validation indicator, slim banner, spec-bar + canvas-toolbar placement; see docs/ide-parity.md  |
+| 20  | Drag-to-reorder workflow library rows             | HTML5 drag on `LibraryExplorer` rows; persisted order (`open-workflow-editor:library-order:v1`)     |
+| 21  | Deeper breadcrumbs into container tasks           | `getBreadcrumbPath` walks `for.do`, `fork.branches`, `try`/`catch` nesting; clickable task segments |
+| 22  | Explorer "reveal active file"                     | Active row auto-scrolls into view on tab switch + "◎" reveal button in the Workflows header         |
+| 23  | Settings profiles (export/import JSON)            | `SettingsDialog` export/import; covers theme, mini-map, panels, gateway URL (Bearer token excluded) |
+
+### VS Code parity round 1 (Tasks 1–9)
 
 | Task                | What shipped                                                                                                                                                                                                                                                                                                                         |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -126,22 +128,9 @@ All nine items from the original gap analysis are done; per-task checklists were
 
 ---
 
-## Verification Commands
-
-```bash
-npm test            # Vitest unit tests (56)
-npm run test:browser# Playwright E2E tests (50)
-npm run typecheck   # tsc --noEmit
-npm run lint        # ESLint
-npm run format:check# Prettier
-npm run build       # Production build
-```
-
----
-
 ## How to keep this file current
 
-1. When starting a task, add a board row with `[~] IN PROGRESS` **before** coding.
+1. When starting a task, add a board row with `[~]` IN PROGRESS **before** coding.
 2. Update sub-items as they land.
-3. When done: `[x] DONE` + one-line note in the board.
-4. Finished tasks move to the Archive/Capabilities sections; new gaps go into the "Next candidates" list.
+3. When done: `[x]` DONE + one-line note in the board.
+4. Finished tasks move to the Archive/Capabilities sections; new gaps go into the Open Task Board.

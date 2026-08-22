@@ -1,4 +1,5 @@
 import {
+  Fragment,
   StrictMode,
   useCallback,
   useEffect,
@@ -19,6 +20,7 @@ import {
   autoLayoutFlow,
   createFlowGraph,
   duplicateTopLevelTask,
+  getBreadcrumbPath,
   getTopLevelTask,
   NEW_WORKFLOW,
   parseWorkflow,
@@ -35,6 +37,7 @@ import {
   parseWorkflowLibrary,
   replaceWorkflowRecordsWithState,
   removeWorkflowRecord,
+  reorderWorkflowIds,
   uniqueWorkflowName,
   upsertWorkflowRecord,
 } from './workflowStore';
@@ -88,6 +91,7 @@ const PANEL_WIDTHS_KEY = 'open-workflow-editor:panel-widths:v1';
 const CANVAS_PREFS_KEY = 'open-workflow-editor:canvas-prefs:v1';
 const VIEWPORTS_KEY = 'open-workflow-editor:viewports:v1';
 const RAIL_SECTIONS_KEY = 'open-workflow-editor:rail-sections:v1';
+const LIBRARY_ORDER_KEY = 'open-workflow-editor:library-order:v1';
 const PERSISTENCE_VERSION = 1;
 
 interface StoredWorkflow {
@@ -103,6 +107,18 @@ interface HistorySnapshot {
 interface TaskDeleteRequest {
   id: string;
   name: string;
+}
+
+interface SettingsProfile {
+  version?: number;
+  theme?: AppTheme;
+  showMiniMap?: boolean;
+  panelWidths?: { left: number; right: number };
+  railSections?: { library: boolean; palette: boolean; groups: Record<string, boolean> };
+  leftRailCollapsed?: boolean;
+  inspectorCollapsed?: boolean;
+  runtimeOpen?: boolean;
+  gatewayUrl?: string;
 }
 
 function readStoredWorkflow(): StoredWorkflow {
@@ -168,6 +184,17 @@ function readViewports(): Record<string, { x: number; y: number; zoom: number }>
     // Corrupt viewport store — start fresh.
   }
   return {};
+}
+
+function readLibraryOrder(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = JSON.parse(window.localStorage.getItem(LIBRARY_ORDER_KEY) || 'null');
+    if (Array.isArray(raw)) return raw.filter((id): id is string => typeof id === 'string');
+  } catch {
+    // Corrupt order — fall back to document order.
+  }
+  return [];
 }
 
 function readRailSections(): { library: boolean; palette: boolean; groups: Record<string, boolean> } {
@@ -314,6 +341,8 @@ function App() {
     palette: boolean;
     groups: Record<string, boolean>;
   }>(() => readRailSections());
+  const [libraryOrder, setLibraryOrder] = useState<string[]>(() => readLibraryOrder());
+  const [revealActiveTick, setRevealActiveTick] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [executionStatusMap, setExecutionStatusMap] = useState<
     Record<string, 'running' | 'success' | 'failed' | 'waiting'>
@@ -759,9 +788,39 @@ function App() {
     if (!seen.has(workflowId)) {
       rows.push({ id: workflowId, name: workflowName, isActive: true, isDirty: dirty, isSaved: false });
     }
+    // Respect the user's drag-reordered library order; unknown ids (new or
+    // unsaved workflows) fall back to alphabetical after the known ones.
+    const orderIndex = new Map(libraryOrder.map((id, index) => [id, index]));
+    rows.sort((a, b) => {
+      const aIndex = orderIndex.get(a.id);
+      const bIndex = orderIndex.get(b.id);
+      if (aIndex === undefined && bIndex === undefined) return a.name.localeCompare(b.name);
+      if (aIndex === undefined) return 1;
+      if (bIndex === undefined) return -1;
+      return aIndex - bIndex;
+    });
     return rows;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workflowRecords, workflowId, workflowName, dirty, openTabIds]);
+  }, [workflowRecords, workflowId, workflowName, dirty, openTabIds, libraryOrder]);
+
+  const handleReorderWorkflows = (draggedId: string, overId: string) => {
+    if (draggedId === overId) return;
+    const next = reorderWorkflowIds(
+      libraryRows.map((row) => row.id),
+      draggedId,
+      overId,
+    );
+    try {
+      window.localStorage.setItem(LIBRARY_ORDER_KEY, JSON.stringify(next));
+    } catch {
+      // Best-effort persistence.
+    }
+    setLibraryOrder(next);
+  };
+
+  const revealActiveWorkflow = useCallback(() => {
+    setRevealActiveTick((tick) => tick + 1);
+  }, []);
 
   const renameWorkflowInLibrary = (id: string, nextName: string) => {
     const clean = nextName.trim().replace(/[^a-zA-Z0-9_-]/g, '-');
@@ -917,6 +976,95 @@ function App() {
       setNotice('Could not persist gateway configuration');
       window.setTimeout(() => setNotice(''), 1800);
     }
+  }, []);
+
+  const exportSettingsProfile = useCallback(() => {
+    const profile = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      theme,
+      showMiniMap: canvasPrefs.showMiniMap,
+      panelWidths,
+      railSections,
+      leftRailCollapsed,
+      inspectorCollapsed,
+      runtimeOpen,
+      // Bearer tokens are intentionally excluded from profiles (secret).
+      gatewayUrl: window.localStorage.getItem('open-workflow-gateway-url') || '',
+    };
+    try {
+      const blob = new Blob([JSON.stringify(profile, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = window.document.createElement('a');
+      anchor.href = url;
+      anchor.download = 'open-workflow-settings-profile.json';
+      window.document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      setNotice('Settings profile exported');
+    } catch {
+      setNotice('Could not export settings profile');
+    }
+    window.setTimeout(() => setNotice(''), 1800);
+  }, [theme, canvasPrefs, panelWidths, railSections, leftRailCollapsed, inspectorCollapsed, runtimeOpen]);
+
+  const importSettingsProfile = useCallback((json: string) => {
+    try {
+      const profile = JSON.parse(json) as SettingsProfile;
+      if (!profile || typeof profile !== 'object') throw new Error('invalid');
+
+      if (profile.theme === 'light' || profile.theme === 'dark' || profile.theme === 'high-contrast') {
+        setTheme(profile.theme);
+      }
+      if (typeof profile.showMiniMap === 'boolean') {
+        setCanvasPrefs({ showMiniMap: profile.showMiniMap });
+        window.localStorage.setItem(CANVAS_PREFS_KEY, JSON.stringify({ showMiniMap: profile.showMiniMap }));
+      }
+      if (
+        profile.panelWidths &&
+        typeof profile.panelWidths.left === 'number' &&
+        Number.isFinite(profile.panelWidths.left) &&
+        typeof profile.panelWidths.right === 'number' &&
+        Number.isFinite(profile.panelWidths.right)
+      ) {
+        const widths = {
+          left: Math.round(profile.panelWidths.left),
+          right: Math.round(profile.panelWidths.right),
+        };
+        setPanelWidths(widths);
+        window.localStorage.setItem(PANEL_WIDTHS_KEY, JSON.stringify(widths));
+      }
+      if (
+        profile.railSections &&
+        typeof profile.railSections === 'object' &&
+        typeof profile.railSections.library === 'boolean' &&
+        typeof profile.railSections.palette === 'boolean'
+      ) {
+        const sections = {
+          library: profile.railSections.library,
+          palette: profile.railSections.palette,
+          groups:
+            profile.railSections.groups && typeof profile.railSections.groups === 'object'
+              ? profile.railSections.groups
+              : {},
+        };
+        setRailSections(sections);
+        window.localStorage.setItem(RAIL_SECTIONS_KEY, JSON.stringify(sections));
+      }
+      if (typeof profile.leftRailCollapsed === 'boolean') setLeftRailCollapsed(profile.leftRailCollapsed);
+      if (typeof profile.inspectorCollapsed === 'boolean') setInspectorCollapsed(profile.inspectorCollapsed);
+      if (typeof profile.runtimeOpen === 'boolean') setRuntimeOpen(profile.runtimeOpen);
+      if (typeof profile.gatewayUrl === 'string') {
+        if (profile.gatewayUrl) window.localStorage.setItem('open-workflow-gateway-url', profile.gatewayUrl);
+        else window.localStorage.removeItem('open-workflow-gateway-url');
+        window.dispatchEvent(new Event('open-workflow:gateway-config-changed'));
+      }
+      setNotice('Settings profile applied');
+    } catch {
+      setNotice('Invalid settings profile');
+    }
+    window.setTimeout(() => setNotice(''), 1800);
   }, []);
 
   const duplicateSelected = useCallback(() => {
@@ -1300,6 +1448,12 @@ do:
 
   const selected = selectedId ? getTopLevelTask(document, selectedId) : null;
   const selectedTaskName = selected?.name || null;
+  const breadcrumbSegments = useMemo(() => {
+    const segments = getBreadcrumbPath(document, selectedId);
+    // The root `do` container is always part of the chain, even before a task
+    // is selected.
+    return segments.length > 0 ? segments : [{ label: 'do', taskId: null }];
+  }, [document, selectedId]);
   const graphIssues = useMemo(() => (syntaxError ? [] : validateGraph(document)), [document, syntaxError]);
   const specDiagnostics = useMemo<SpecDiagnostic[]>(
     () => collectSpecDiagnostics(specText, specFormat, syntaxError, graphIssues),
@@ -2185,6 +2339,9 @@ do:
           onTogglePalette={() => toggleRailSection('palette')}
           paletteGroupsExpanded={railSections.groups}
           onTogglePaletteGroup={togglePaletteGroup}
+          onReorderWorkflows={handleReorderWorkflows}
+          onRevealActiveWorkflow={revealActiveWorkflow}
+          revealRequestId={revealActiveTick}
         />
         <ResizeHandle side="left" onResize={(width) => updatePanelWidth('left', width)} />
         <section className="workspace">
@@ -2203,21 +2360,23 @@ do:
             <div>
               <span className="breadcrumb">
                 <span className="breadcrumb-segment">{workflowName}</span>
-                <span className="breadcrumb-sep">/</span>
-                <span className="breadcrumb-segment">do</span>
-                {selected && (
-                  <>
+                {breadcrumbSegments.map((segment, index) => (
+                  <Fragment key={`${segment.label}-${index}`}>
                     <span className="breadcrumb-sep">/</span>
-                    <button
-                      type="button"
-                      className="breadcrumb-segment breadcrumb-task"
-                      onClick={() => setSelectedId(selected.id)}
-                      title={`Select ${selected.name}`}
-                    >
-                      {selected.name}
-                    </button>
-                  </>
-                )}
+                    {segment.taskId ? (
+                      <button
+                        type="button"
+                        className="breadcrumb-segment breadcrumb-task"
+                        onClick={() => setSelectedId(segment.taskId)}
+                        title={`Select ${segment.label}`}
+                      >
+                        {segment.label}
+                      </button>
+                    ) : (
+                      <span className="breadcrumb-segment">{segment.label}</span>
+                    )}
+                  </Fragment>
+                ))}
               </span>
               <div className="workflow-title-row">
                 <input
@@ -2538,6 +2697,8 @@ do:
         initialGatewayUrl={window.localStorage.getItem('open-workflow-gateway-url') || ''}
         initialAuthToken={window.localStorage.getItem('open-workflow-gateway-token') || ''}
         onGatewayConfigApply={applyGatewayConfig}
+        onExportProfile={exportSettingsProfile}
+        onImportProfile={importSettingsProfile}
       />
       <StatusBar
         selectedTaskName={selectedTaskName}

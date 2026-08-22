@@ -12,6 +12,9 @@ export interface PaletteProps {
   onOpenWorkflow?: (id: string) => void;
   onRenameWorkflow?: (id: string, nextName: string) => void;
   onDeleteWorkflow?: (id: string) => void;
+  onReorderWorkflows?: (draggedId: string, overId: string) => void;
+  onRevealActiveWorkflow?: () => void;
+  revealRequestId?: number;
   /** Accordion section state (left rail). */
   libraryExpanded?: boolean;
   paletteExpanded?: boolean;
@@ -115,6 +118,9 @@ export function Palette({
   onOpenWorkflow,
   onRenameWorkflow,
   onDeleteWorkflow,
+  onReorderWorkflows,
+  onRevealActiveWorkflow,
+  revealRequestId = 0,
   libraryExpanded = true,
   paletteExpanded = true,
   onToggleLibrary,
@@ -170,15 +176,26 @@ export function Palette({
             expanded={libraryExpanded}
             onToggle={onToggleLibrary || (() => undefined)}
             actions={
-              <button
-                type="button"
-                className="library-new"
-                aria-label="Create new workflow"
-                title="Create new workflow"
-                onClick={onNewWorkflow}
-              >
-                ＋
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="library-new"
+                  aria-label="Reveal active workflow"
+                  title="Reveal active workflow"
+                  onClick={onRevealActiveWorkflow}
+                >
+                  ◎
+                </button>
+                <button
+                  type="button"
+                  className="library-new"
+                  aria-label="Create new workflow"
+                  title="Create new workflow"
+                  onClick={onNewWorkflow}
+                >
+                  ＋
+                </button>
+              </>
             }
           >
             <LibraryExplorer
@@ -186,6 +203,8 @@ export function Palette({
               onOpen={onOpenWorkflow}
               onRename={onRenameWorkflow || (() => undefined)}
               onDelete={onDeleteWorkflow || (() => undefined)}
+              onReorderWorkflows={onReorderWorkflows}
+              revealRequestId={revealRequestId}
             />
           </RailSection>
         )}

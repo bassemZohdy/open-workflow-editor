@@ -19,8 +19,8 @@ A production-grade browser-based visual authoring and simulation environment for
 - **Revision History & Visual Diffing:** Full snapshot revision history with Myers LCS line-by-line diffing and 1-click restore.
 - **Template Library & Themes:** Categorized patterns catalog, keyboard shortcuts dialog (`?`/`F1`), and multi-theme system (`Light`, `Dark`, `High-Contrast`).
 - **VS Code–Parity IDE Ergonomics:** CodeMirror 6 code editor for the Specification view (syntax highlighting, line numbers, code folding, find-in-editor, inline diagnostics with click-to-jump), fuzzy command palette (`Ctrl/Cmd+Shift+P`), Quick Open for tabs & saved workflows (`Ctrl/Cmd+P`), workspace-wide task search (`Ctrl/Cmd+Shift+F`), aggregated Problems panel with click-to-navigate (`Ctrl/Cmd+Shift+M`), drag-resizable side rails (persisted widths), right-click context menus on canvas nodes, pane and document tabs, a live status bar (selection, problems count, cursor Ln/Col, runtime connectivity), and global shortcuts that work in every view (`Ctrl+S`, `Ctrl+Z`, `Ctrl+O`…).
-- **Workflow Library Explorer:** VS Code Explorer–style saved-workflows list in the left rail — click to switch, inline rename, delete, and dirty indicators for unsaved tabs.
-- **Settings, Breadcrumbs & Canvas Controls:** Settings dialog (`Ctrl/Cmd+,`) centralizing theme, panel visibility, mini-map, and gateway URL/token; live breadcrumbs (`workflow / do / <task>`); drag-to-reorder tab bar; zoom controls (`Ctrl/Cmd+= / - / 0`) with per-workflow viewport persistence.
+- **Workflow Library Explorer:** VS Code Explorer–style saved-workflows list in the left rail — click to switch, inline rename, delete, dirty indicators for unsaved tabs, drag-to-reorder rows with persisted manual order, and a "reveal active workflow" affordance (auto-scroll + ◎ button).
+- **Settings, Breadcrumbs & Canvas Controls:** Settings dialog (`Ctrl/Cmd+,`) centralizing theme, panel visibility, mini-map, gateway URL/token, and export/import of settings profiles as JSON (secrets excluded); live breadcrumbs (`workflow / do / <task>`, resolving into container tasks such as `for.do`, `fork.branches`, `try`/`catch`); drag-to-reorder tab bar; zoom controls (`Ctrl/Cmd+= / - / 0`) with per-workflow viewport persistence.
 
 Full IDE-parity reference (surfaces, shortcuts, persistence keys): [`docs/ide-parity.md`](docs/ide-parity.md).
 
@@ -61,10 +61,10 @@ Click **Deploy bundle** in the workspace toolbar to generate:
 ## Verification Commands
 
 ```bash
-# Run Vitest unit tests (56 tests)
+# Run Vitest unit tests (62 tests)
 npm test
 
-# Run Playwright E2E browser tests (50 tests)
+# Run Playwright E2E browser tests (57 tests, serial workers)
 npm run test:browser
 
 # Type-check TypeScript
@@ -84,6 +84,8 @@ npm run build
 
 ## Documentation Index
 
+- [`CHANGELOG.md`](CHANGELOG.md): Notable changes per release (Keep-a-Changelog format).
+- [`TODO.md`](TODO.md): Task board, roadmap, and review findings.
 - [`DESIGN.md`](DESIGN.md): Design tokens, typography, layout grid, elevation, and component specs.
 - [`docs/ide-parity.md`](docs/ide-parity.md): VS Code–parity surfaces, keyboard shortcuts, and persistence keys.
 - [`docs/java-sdk-gateway.md`](docs/java-sdk-gateway.md): Spring Boot & Java SDK 7.x daemon bridge setup guide.
