@@ -26,6 +26,7 @@ Primary implementation: `main.tsx` (wiring & global shortcuts) and the `src/comp
 
 - Fuzzy, keyed-by-score search with matched-character highlighting; sections (`File`, `Edit`, `Tasks`, `View`, `Workflow`, `Workflows`, `Settings`, `Help`).
 - Includes every toolbar action (`Save`, `Validate`, `Auto layout`, `Format`, `Export`, `Copy`, `Deploy bundle`, `Templates`, `History`, …), view/panel toggles, zoom and mini-map commands, theme switching, `Add <type> task` for all 12 task types, and direct `Open workflow: <name>` entries for the saved library.
+- **Canvas-scoped commands are always runnable:** invoking zoom / fit / mini-map entries from the Specification view auto-switches to the canvas and then applies (Task 28).
 - Keyboard: `↑/↓` or `Tab` to navigate, `Enter` to run, `Esc` to dismiss.
 
 ## 3. Quick open & workspace search
@@ -103,7 +104,7 @@ The static `Dubai Government cases /` prefix is replaced by a live chain built b
 
 `src/components/layout/SettingsDialog.tsx` — `Ctrl/Cmd+,` (or command palette → `Open settings…`).
 
-- **Appearance:** color theme, mini-map toggle.
+- **Appearance:** color theme, **per-workflow theme override** ("Theme for this workflow" — `Default | Light | Dark | High contrast`), mini-map toggle. The resolved theme is `workflowThemes[workflowId] ?? globalTheme`; the top bar keeps the _default_ theme in its select and shows an amber dot while an override is active.
 - **Panels:** task palette rail, inspector rail, runtime console visibility; reset panel widths to defaults.
 - **Runtime gateway:** gateway URL and bearer token. They are stored in the same localStorage keys the Runtime console uses and broadcast through `open-workflow:gateway-config-changed`; the console picks them up and switches to gateway mode when a URL is applied.
 - **Settings profiles:** export the workspace settings as JSON (theme, mini-map, panel widths, rail sections, panel visibility, gateway URL) and re-import them from file. Bearer tokens are deliberately excluded from exports.
@@ -112,6 +113,18 @@ The static `Dubai Government cases /` prefix is replaced by a live chain built b
 
 - `Ctrl/Cmd+=` zoom in, `Ctrl/Cmd+-` zoom out, `Ctrl/Cmd+0` reset zoom; matching commands in the palette.
 - Per-workflow pan/zoom is restored when reopening a workflow and stored in `open-workflow-editor:viewports:v1`; canvas prefs (mini-map visibility) live in `open-workflow-editor:canvas-prefs:v1`.
+
+## 13. Palette group reorder (Task 25)
+
+- The Task palette groups (Flow control, Data & logic, Services, Events, AI) are draggable via their accordion heads (`application/open-workflow-group`), with drop-target feedback on the group container.
+- Order persists in `open-workflow-editor:palette-group-order:v1`; `taskMeta.orderPaletteGroups` resolves custom order and appends any missing groups in the default order.
+
+## 14. Canvas multi-select (Task 27)
+
+- **Modifier-click additive selection** — `Ctrl`/`Cmd`/`Shift` + click toggles a node into/out of the selection (`multiSelectionKeyCode`); the last-clicked node is the inspector's primary selection.
+- **Rubber-band selection** via `selectionOnDrag`; `Ctrl/Cmd+A` selects all tasks; multi-drag moves, `Delete` deletes.
+- **Bulk operations from the multi-selection context menu:** "Duplicate N tasks" (reverse-order duplication, copies appended at the end of the `do` list) and "Delete N tasks".
+- The canvas always mirrors the document: `createFlowGraph` appends any top-level task the SDK semantic graph silently omits, so duplicated/disconnected tasks render even mid-list.
 
 ---
 
@@ -138,18 +151,20 @@ The static `Dubai Government cases /` prefix is replaced by a live chain built b
 
 ## Persistence keys
 
-| Key                                                         | Contents                      |
-| ----------------------------------------------------------- | ----------------------------- |
-| `open-workflow-editor:dubai-government:v1`                  | Active workflow spec draft    |
-| `open-workflow-editor:library:v4`                           | Saved-workflow library        |
-| `open-workflow-editor:positions:v4`                         | Canvas node positions         |
-| `open-workflow-editor:preferences:v4`                       | Editor preferences            |
-| `open-workflow-editor:panel-widths:v1`                      | Resizable rail widths         |
-| `open-workflow-editor:canvas-prefs:v1`                      | Canvas preferences (mini-map) |
-| `open-workflow-editor:viewports:v1`                         | Per-workflow pan/zoom         |
-| `open-workflow-editor:library-order:v1`                     | Manual workflow-library order |
-| `open-workflow-gateway-url` / `open-workflow-gateway-token` | Runtime gateway connection    |
-| `open-workflow-theme`                                       | Color theme                   |
+| Key                                                         | Contents                        |
+| ----------------------------------------------------------- | ------------------------------- |
+| `open-workflow-editor:dubai-government:v1`                  | Active workflow spec draft      |
+| `open-workflow-editor:library:v4`                           | Saved-workflow library          |
+| `open-workflow-editor:positions:v4`                         | Canvas node positions           |
+| `open-workflow-editor:preferences:v4`                       | Editor preferences              |
+| `open-workflow-editor:panel-widths:v1`                      | Resizable rail widths           |
+| `open-workflow-editor:canvas-prefs:v1`                      | Canvas preferences (mini-map)   |
+| `open-workflow-editor:viewports:v1`                         | Per-workflow pan/zoom           |
+| `open-workflow-editor:library-order:v1`                     | Manual workflow-library order   |
+| `open-workflow-editor:palette-group-order:v1`               | Manual task-palette group order |
+| `open-workflow-editor:workflow-themes:v1`                   | Per-workflow theme overrides    |
+| `open-workflow-gateway-url` / `open-workflow-gateway-token` | Runtime gateway connection      |
+| `open-workflow-theme`                                       | Global color theme              |
 
 ---
 

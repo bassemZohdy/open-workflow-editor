@@ -69,7 +69,7 @@ import type { LibraryWorkflowRow } from './components/layout/LibraryExplorer';
 import { openWorkflowFile, saveWorkflowFile } from './fileSystemAdapter';
 import { EditorCanvas } from './components/canvas';
 import { Inspector } from './components/inspector';
-import { paletteItems } from './taskMeta';
+import { DEFAULT_PALETTE_GROUPS, paletteItems } from './taskMeta';
 import type { WorkflowTemplate } from './fixtures/templates';
 import type {
   WorkflowDocument,
@@ -92,6 +92,8 @@ const CANVAS_PREFS_KEY = 'open-workflow-editor:canvas-prefs:v1';
 const VIEWPORTS_KEY = 'open-workflow-editor:viewports:v1';
 const RAIL_SECTIONS_KEY = 'open-workflow-editor:rail-sections:v1';
 const LIBRARY_ORDER_KEY = 'open-workflow-editor:library-order:v1';
+const PALETTE_GROUP_ORDER_KEY = 'open-workflow-editor:palette-group-order:v1';
+const WORKFLOW_THEMES_KEY = 'open-workflow-editor:workflow-themes:v1';
 const PERSISTENCE_VERSION = 1;
 
 interface StoredWorkflow {
@@ -195,6 +197,28 @@ function readLibraryOrder(): string[] {
     // Corrupt order — fall back to document order.
   }
   return [];
+}
+
+function readPaletteGroupOrder(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = JSON.parse(window.localStorage.getItem(PALETTE_GROUP_ORDER_KEY) || 'null');
+    if (Array.isArray(raw)) return raw.filter((id): id is string => typeof id === 'string');
+  } catch {
+    // Corrupt order — fall back to the default group order.
+  }
+  return [];
+}
+
+function readWorkflowThemes(): Record<string, AppTheme> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = JSON.parse(window.localStorage.getItem(WORKFLOW_THEMES_KEY) || 'null');
+    if (raw && typeof raw === 'object') return raw as Record<string, AppTheme>;
+  } catch {
+    // Corrupt store — start fresh.
+  }
+  return {};
 }
 
 function readRailSections(): { library: boolean; palette: boolean; groups: Record<string, boolean> } {
@@ -305,9 +329,12 @@ function App() {
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
   const [runtimeOpen, setRuntimeOpen] = useState(true);
   const [taskDeleteRequest, setTaskDeleteRequest] = useState<TaskDeleteRequest | null>(null);
-  const [theme, setTheme] = useState<AppTheme>(() => {
+  const [globalTheme, setGlobalTheme] = useState<AppTheme>(() => {
     return (window.localStorage.getItem('open-workflow-theme') as AppTheme) || 'light';
   });
+  const [workflowThemes, setWorkflowThemes] = useState<Record<string, AppTheme>>(() => readWorkflowThemes());
+  /** Resolved theme: per-workflow override wins, global theme is the fallback. */
+  const theme: AppTheme = workflowThemes[workflowId] || globalTheme;
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -342,6 +369,7 @@ function App() {
     groups: Record<string, boolean>;
   }>(() => readRailSections());
   const [libraryOrder, setLibraryOrder] = useState<string[]>(() => readLibraryOrder());
+  const [paletteGroupOrder, setPaletteGroupOrder] = useState<string[]>(() => readPaletteGroupOrder());
   const [revealActiveTick, setRevealActiveTick] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [executionStatusMap, setExecutionStatusMap] = useState<
@@ -405,8 +433,11 @@ function App() {
 
   useEffect(() => {
     window.document.documentElement.setAttribute('data-theme', theme);
-    window.localStorage.setItem('open-workflow-theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    window.localStorage.setItem('open-workflow-theme', globalTheme);
+  }, [globalTheme]);
 
   useEffect(() => {
     const protectUnsavedChanges = (event: BeforeUnloadEvent) => {
@@ -822,6 +853,37 @@ function App() {
     setRevealActiveTick((tick) => tick + 1);
   }, []);
 
+  const handleReorderPaletteGroups = (dragged: string, over: string) => {
+    if (dragged === over) return;
+    setPaletteGroupOrder((prev) => {
+      const current = prev.length ? [...prev] : [...DEFAULT_PALETTE_GROUPS];
+      const next = reorderWorkflowIds(current, dragged, over);
+      try {
+        window.localStorage.setItem(PALETTE_GROUP_ORDER_KEY, JSON.stringify(next));
+      } catch {
+        // Best-effort persistence.
+      }
+      return next;
+    });
+  };
+
+  const setWorkflowThemeOverride = useCallback(
+    (nextTheme: AppTheme | null) => {
+      setWorkflowThemes((prev) => {
+        const next = { ...prev };
+        if (nextTheme) next[workflowId] = nextTheme;
+        else delete next[workflowId];
+        try {
+          window.localStorage.setItem(WORKFLOW_THEMES_KEY, JSON.stringify(next));
+        } catch {
+          // Best-effort persistence.
+        }
+        return next;
+      });
+    },
+    [workflowId],
+  );
+
   const renameWorkflowInLibrary = (id: string, nextName: string) => {
     const clean = nextName.trim().replace(/[^a-zA-Z0-9_-]/g, '-');
     if (!clean) return;
@@ -1015,7 +1077,7 @@ function App() {
       if (!profile || typeof profile !== 'object') throw new Error('invalid');
 
       if (profile.theme === 'light' || profile.theme === 'dark' || profile.theme === 'high-contrast') {
-        setTheme(profile.theme);
+        setGlobalTheme(profile.theme);
       }
       if (typeof profile.showMiniMap === 'boolean') {
         setCanvasPrefs({ showMiniMap: profile.showMiniMap });
@@ -1072,6 +1134,47 @@ function App() {
     const next = duplicateTopLevelTask(document, selectedId);
     if (next !== document) syncDocument(next);
   }, [document, selectedId, syncDocument]);
+
+  const selectedTaskIds = useMemo(() => {
+    return nodes
+      .filter((node) => node.type === 'task' && (node as unknown as { selected?: boolean }).selected)
+      .map((node) => node.id);
+  }, [nodes]);
+
+  /** Bulk duplicate for canvas multi-selection (reverse order keeps indices stable). */
+  const duplicateSelectedTasks = useCallback(() => {
+    if (!selectedTaskIds.length) return;
+    const indexOf = (current: WorkflowDocument, id: string) => {
+      const name = id.replace('/do/', '');
+      return (current.do ?? []).findIndex((item) => Object.hasOwn(item, name));
+    };
+    const ordered = [...selectedTaskIds].sort((a, b) => indexOf(document, b) - indexOf(document, a));
+    let next = document;
+    const createdIds: string[] = [];
+    ordered.forEach((id) => {
+      const candidate = duplicateTopLevelTask(next, id);
+      if (candidate === next) return;
+      next = candidate;
+      const createdName = Object.keys((candidate.do ?? [])[candidate.do!.length - 1] || {})[0];
+      if (createdName) createdIds.push(`/do/${createdName}`);
+    });
+    if (next !== document) {
+      syncDocument(next);
+      setNodes((current) => current.map((node) => ({ ...node, selected: createdIds.includes(node.id) })));
+      setSelectedId(createdIds[0] || null);
+    }
+  }, [document, selectedTaskIds, syncDocument]);
+
+  /** Bulk delete for canvas multi-selection. */
+  const deleteSelectedTasks = useCallback(() => {
+    if (!selectedTaskIds.length) return;
+    let next = document;
+    selectedTaskIds.forEach((id) => {
+      next = removeTopLevelTask(next, id);
+    });
+    if (next !== document) syncDocument(next);
+    setSelectedId(null);
+  }, [document, selectedTaskIds, syncDocument]);
 
   const addPaletteTask = (taskType: TaskType) => {
     const paletteItem = paletteItems.find((item) => item.type === taskType);
@@ -1564,6 +1667,30 @@ do:
   const handleNodeContextMenu = useCallback(
     (node: FlowNode, x: number, y: number) => {
       const nodeName = String(node.id).replace('/do/', '');
+      const multiCount = selectedTaskIds.length;
+      if (multiCount > 1) {
+        setContextMenu({
+          x,
+          y,
+          title: `${multiCount} tasks selected`,
+          items: [
+            {
+              id: 'node-duplicate-many',
+              label: `Duplicate ${multiCount} tasks`,
+              icon: '⧉',
+              onSelect: duplicateSelectedTasks,
+            },
+            {
+              id: 'node-delete-many',
+              label: `Delete ${multiCount} tasks`,
+              icon: '✕',
+              danger: true,
+              onSelect: deleteSelectedTasks,
+            },
+          ],
+        });
+        return;
+      }
       setContextMenu({
         x,
         y,
@@ -1606,7 +1733,14 @@ do:
         ],
       });
     },
-    [copyTaskYaml, duplicateSelected, requestTaskDelete],
+    [
+      copyTaskYaml,
+      deleteSelectedTasks,
+      duplicateSelected,
+      duplicateSelectedTasks,
+      requestTaskDelete,
+      selectedTaskIds,
+    ],
   );
 
   const handlePaneContextMenu = useCallback(
@@ -1963,8 +2097,10 @@ do:
         hint: 'F',
         section: 'View',
         icon: '⌖',
-        disabled: view !== 'canvas',
-        run: () => setFitViewRequest((current) => current + 1),
+        run: () => {
+          setView('canvas');
+          setFitViewRequest((current) => current + 1);
+        },
       },
       {
         id: 'view-zoom-in',
@@ -1972,8 +2108,10 @@ do:
         hint: 'Ctrl+=',
         section: 'View',
         icon: '＋',
-        disabled: view !== 'canvas',
-        run: () => zoomCanvas('in'),
+        run: () => {
+          setView('canvas');
+          zoomCanvas('in');
+        },
       },
       {
         id: 'view-zoom-out',
@@ -1981,8 +2119,10 @@ do:
         hint: 'Ctrl+-',
         section: 'View',
         icon: '−',
-        disabled: view !== 'canvas',
-        run: () => zoomCanvas('out'),
+        run: () => {
+          setView('canvas');
+          zoomCanvas('out');
+        },
       },
       {
         id: 'view-zoom-reset',
@@ -1990,15 +2130,16 @@ do:
         hint: 'Ctrl+0',
         section: 'View',
         icon: '◎',
-        disabled: view !== 'canvas',
-        run: () => zoomCanvas('reset'),
+        run: () => {
+          setView('canvas');
+          zoomCanvas('reset');
+        },
       },
       {
         id: 'view-minimap',
         label: 'Toggle mini-map on canvas',
         section: 'View',
         icon: '▣',
-        disabled: view !== 'canvas',
         run: toggleMiniMap,
       },
       {
@@ -2067,21 +2208,29 @@ do:
         label: 'Theme: Light',
         section: 'Settings',
         icon: '☀',
-        run: () => setTheme('light'),
+        run: () => setGlobalTheme('light'),
       },
       {
         id: 'theme-dark',
         label: 'Theme: Dark',
         section: 'Settings',
         icon: '🌙',
-        run: () => setTheme('dark'),
+        run: () => setGlobalTheme('dark'),
       },
       {
         id: 'theme-contrast',
         label: 'Theme: High contrast',
         section: 'Settings',
         icon: '👁',
-        run: () => setTheme('high-contrast'),
+        run: () => setGlobalTheme('high-contrast'),
+      },
+      {
+        id: 'theme-clear-override',
+        label: 'Clear this workflow’s theme override',
+        section: 'Settings',
+        icon: '◐',
+        disabled: !workflowThemes[workflowId],
+        run: () => setWorkflowThemeOverride(null),
       },
 
       {
@@ -2303,13 +2452,26 @@ do:
           <select
             className="theme-select"
             aria-label="Editor visual theme"
-            value={theme}
-            onChange={(e) => setTheme(e.target.value as AppTheme)}
+            value={globalTheme}
+            onChange={(e) => setGlobalTheme(e.target.value as AppTheme)}
+            title={
+              workflowThemes[workflowId]
+                ? `Default theme — this workflow uses an override (see Settings)`
+                : 'Default theme for all workflows'
+            }
           >
             <option value="light">☀️ Light</option>
             <option value="dark">🌙 Dark</option>
             <option value="high-contrast">👁 Contrast</option>
           </select>
+          {workflowThemes[workflowId] && (
+            <span
+              className="theme-override-dot"
+              role="img"
+              aria-label="This workflow uses a theme override"
+              title="This workflow uses a theme override — clear it in Settings"
+            />
+          )}
           <span className="avatar" role="img" aria-label="Open Workflow Editor workspace">
             OW
           </span>
@@ -2339,6 +2501,8 @@ do:
           onTogglePalette={() => toggleRailSection('palette')}
           paletteGroupsExpanded={railSections.groups}
           onTogglePaletteGroup={togglePaletteGroup}
+          paletteGroupOrder={paletteGroupOrder}
+          onReorderPaletteGroups={handleReorderPaletteGroups}
           onReorderWorkflows={handleReorderWorkflows}
           onRevealActiveWorkflow={revealActiveWorkflow}
           revealRequestId={revealActiveTick}
@@ -2683,8 +2847,10 @@ do:
       <SettingsDialog
         open={showSettings}
         onClose={() => setShowSettings(false)}
-        theme={theme}
-        onThemeChange={setTheme}
+        theme={globalTheme}
+        onThemeChange={setGlobalTheme}
+        workflowTheme={workflowThemes[workflowId] ?? null}
+        onWorkflowThemeChange={setWorkflowThemeOverride}
         leftRailOpen={!leftRailMinimized}
         inspectorOpen={!inspectorCollapsed}
         runtimeOpen={runtimeOpen}

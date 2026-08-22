@@ -201,7 +201,9 @@ describe('workflow model adapter', () => {
     document = connectTopLevelTasks(document, '/do/checkTravelPassExpiry', '/do/verifyNolAccount');
     const duplicate = duplicateTopLevelTask(document, '/do/checkTravelPassExpiry');
 
-    expect(duplicate.do?.[1]?.['checkTravelPassExpiry-copy']).toEqual({
+    // The copy is appended at the end of the do list (keeps it visible in the
+    // semantic graph) with the outgoing edge removed.
+    expect(duplicate.do?.[(duplicate.do?.length ?? 1) - 1]?.['checkTravelPassExpiry-copy']).toEqual({
       set: { renewalDue: true, nolTagId: '0123456789', passDuration: '30-days' },
     });
     expect(duplicate.do?.[0]?.checkTravelPassExpiry?.then).toBe('verifyNolAccount');
@@ -1037,5 +1039,51 @@ describe('getBreadcrumbPath', () => {
       { label: 'do', taskId: null },
       { label: 'fallback', taskId: '/do/loop/do/guarded/catch/do/fallback' },
     ]);
+  });
+});
+
+describe('canvas graph completeness & duplication (Task 27 fix)', () => {
+  it('duplicateTopLevelTask appends the copy at the end of the do list', () => {
+    const { document } = parseWorkflow(SAMPLE_WORKFLOW);
+    const next = duplicateTopLevelTask(document, '/do/checkTravelPassExpiry');
+    const names = (next.do ?? []).map((item) => Object.keys(item)[0]);
+    expect(names.at(-1)).toBe('checkTravelPassExpiry-copy');
+    expect(names).toHaveLength((document.do ?? []).length + 1);
+  });
+
+  it('the duplicated task appears in the canvas flow graph', () => {
+    const { document } = parseWorkflow(SAMPLE_WORKFLOW);
+    let next = duplicateTopLevelTask(document, '/do/verifyNolAccount');
+    next = duplicateTopLevelTask(next, '/do/checkTravelPassExpiry');
+    const flow = createFlowGraph(next);
+    const ids = flow.nodes.map((node) => node.id);
+    expect(ids).toContain('/do/verifyNolAccount-copy');
+    expect(ids).toContain('/do/checkTravelPassExpiry-copy');
+    expect(flow.nodes.filter((node) => node.type === 'task')).toHaveLength(10);
+  });
+
+  it('createFlowGraph keeps disconnected top-level tasks that the SDK semantic graph omits', () => {
+    const { document } = parseWorkflow(`document:
+  dsl: "1.0.3"
+  namespace: default
+  name: disconnected
+  version: "0.1.0"
+do:
+  - firstTask:
+      set:
+        ok: true
+  - secondTask:
+      set:
+        ok: true
+      then: thirdTask
+  - thirdTask:
+      set:
+        ok: true`);
+    // Both entries are present regardless of SDK traversal quirks.
+    const flow = createFlowGraph(document);
+    const ids = flow.nodes.map((node) => node.id);
+    expect(ids).toContain('/do/firstTask');
+    expect(ids).toContain('/do/secondTask');
+    expect(ids).toContain('/do/thirdTask');
   });
 });

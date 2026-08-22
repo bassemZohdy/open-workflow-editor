@@ -4448,3 +4448,25 @@ button:focus-visible,
 .runtime-chevron.open {
   transform: rotate(90deg);
 }
+
+/* ------------------------------------------------------------------ */
+/* Round: palette group reorder, per-workflow theme override.          */
+/* ------------------------------------------------------------------ */
+.accordion-group.drop-target {
+  border-radius: 6px;
+  outline: 2px dashed var(--blue);
+  outline-offset: -2px;
+  background: var(--blue-soft);
+}
+.theme-override-dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 0 2px var(--bg-topbar);
+}
+.settings-control-inline {
+  width: auto;
+  max-width: 200px;
+}

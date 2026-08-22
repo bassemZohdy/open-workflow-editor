@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Added
+### Added (Tasks 20–23)
 
 - Drag-to-reorder workflow library rows with persisted manual order (`open-workflow-editor:library-order:v1`). (Task 20)
 - Explorer "reveal active workflow": active row auto-scrolls into view on tab switch plus a "◎" reveal button in the Workflows header. (Task 21)
@@ -15,10 +15,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `workflowStore.reorderWorkflowIds` — pure, unit-tested reorder helper reused by the explorer drag handler.
 - `CHANGELOG.md` (this file).
 
+### Added (Tasks 25–28)
+
+- Task palette **group drag-to-reorder** with persisted order (`open-workflow-editor:palette-group-order:v1`) and an `orderPaletteGroups` helper. (Task 25)
+- **Per-workflow theme overrides** with fallback to the global theme (`open-workflow-editor:workflow-themes:v1`); the Settings dialog gained "Theme for this workflow" and the top bar shows an override dot. (Task 26)
+- **Canvas multi-select** — modifier-click additive selection (Ctrl/Cmd/Shift), rubber-band selection, and bulk duplicate/delete from a multi-selection context menu. (Task 27)
+- Canvas-scoped command-palette entries (zoom, fit, mini-map) now **auto-switch to the canvas view** instead of rendering disabled. (Task 28)
+
+### Fixed
+
+- **Canvas graph completeness (root cause of the Task 24/27 divergence):** the SDK semantic graph silently omitted top-level tasks that stand disconnected mid-list, so duplicated/de-then'ed tasks existed in the document but never rendered on the canvas. `createFlowGraph` now appends any missing top-level document tasks, and `duplicateTopLevelTask` appends copies at the end of the `do` list (same as palette adds). Unit-tested. (Tasks 24/27)
+- `reuseExistingServer: !process.env.CI` — CI always boots a fresh dev server, avoiding stale-server contamination in parallel runs.
+
 ### Changed
 
-- Pinned Playwright E2E workers to 1 (`playwright.config.js`) — full-parallel runs on high-core machines flaked across unrelated tests; serial runs are deterministic (57/57). Re-tuning parallelism is tracked as a TODO task.
-- README and `docs/ide-parity.md` refreshed to cover Tasks 20–23, the `library-order:v1` persistence key, and current test counts (62 unit / 57 E2E).
+- Removed the Playwright **serial-workers stopgap**: parallel runs are green again (61 tests × full parallel, plus a 3× repeat run) after the fixes above.
+- README, `docs/ide-parity.md`, new `CONTRIBUTING.md` and this changelog refreshed; test counts now **65 unit / 61 E2E**.
 
 ### CI
 

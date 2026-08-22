@@ -3,6 +3,9 @@
 > **Status legend:** `[x]` done · `[~]` in progress · `[ ]` pending.
 > This file is the source of truth for task status. Update the board as work progresses (see the final section for conventions).
 
+<!-- loop-review-state: consecutive_clean=1, last_check=2026-08-23T03:35:00 -->
+<!-- loop-review-note: typecheck clean, 65 unit tests pass, TODO board (tasks 24-29) matches in-flight code changes; no drift found -->
+
 ## Goal
 
 Build a real, production-ready "VS Code for Open Workflow Specifications": a browser-based authoring and simulation environment with visual drag-and-drop canvas authoring, complete task property inspectors, bidirectional YAML/JSON synchronization, deterministic auto-layout, schema validation, multi-workflow lifecycle management, and a hardened separation between authoring, simulation, and remote runtime execution — with the IDE-level ergonomics (code editor, command palette, quick open, problems panel, resizable panels, context menus, live status bar) that make it feel like VS Code.
@@ -11,17 +14,11 @@ Build a real, production-ready "VS Code for Open Workflow Specifications": a bro
 
 ## Open Task Board
 
-| #   | Task                                                        | Status        | Notes                                                                                                                                         |
-| --- | ----------------------------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| 16  | AI task families (`llm-call`, `ai-agent-call`)              | `[ ]` PLANNED | Palette placeholder ready; implementation waits on DSL/schema support (see design section below)                                              |
-| 24  | Root-cause E2E parallel flakes & re-enable parallel workers | `[ ]` PENDING | Full-parallel runs on high-core machines flaked (3 different tests across 2 runs); workers pinned to 1 in `playwright.config.js` as a stopgap |
-| 25  | Palette drag-to-reorder                                     | `[ ]` PENDING | Mirror the library-row drag pattern (`application/open-workflow-*`) for task palette groups                                                   |
-| 26  | Per-workflow theme overrides                                | `[ ]` PENDING | Currently theme is global (`open-workflow-theme`); add per-document override with fallback                                                    |
-| 27  | Canvas multi-select                                         | `[ ]` PENDING | Shift/Ctrl+click and rubber-band selection; bulk move/delete/duplicate                                                                        |
-| 28  | Command-palette UX review for canvas-scoped commands        | `[ ]` PENDING | Zoom / fit / mini-map entries render disabled in Specification view — confirm intent or auto-switch to canvas on invoke                       |
-| 29  | Git workflow hardening                                      | `[ ]` PENDING | Add protected `develop` branch + PR flow per project conventions (repo currently pushes straight to `main`)                                   |
+| #   | Task                                           | Status        | Notes                                                                                            |
+| --- | ---------------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------ |
+| 16  | AI task families (`llm-call`, `ai-agent-call`) | `[ ]` PLANNED | Palette placeholder ready; implementation waits on DSL/schema support (see design section below) |
 
-**Scheduling note:** items 24–28 were surfaced by the Playwright review on 2026-08-22. Item 24's stopgap (serial workers) is already merged; the task tracks the real fix.
+**Round 3 (2026-08-23) closed items — see Archive below for details:** Task 24 (parallel flakes root-caused & re-enabled), 25 (palette group reorder), 26 (per-workflow theme overrides), 27 (canvas multi-select + bulk ops), 28 (canvas-scoped palette commands auto-switch), 29 (git workflow hardening, repo-side).
 
 ---
 
@@ -79,21 +76,27 @@ npm run build        # Production build
 
 ### VS Code parity round 2 (Tasks 10–23)
 
-| #   | Task                                              | What shipped                                                                                        |
-| --- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| 10  | Workflow Library explorer sidebar                 | `LibraryExplorer.tsx` — list, rename, delete, switcher, dirty indicator                             |
-| 11  | Drag tabs to reorder the tab bar                  | HTML5 drag with drop-target feedback on `DocumentTabs`                                              |
-| 12  | Live breadcrumbs bar                              | `workflow / do / <task>` chain with clickable task segment                                          |
-| 13  | Settings dialog (`Ctrl/Cmd+,`)                    | Theme, panels, mini-map, gateway URL/token                                                          |
-| 14  | Minimap toggle & zoom controls w/ persistence     | `Ctrl+= / - / 0`, palette commands, per-workflow viewport restore                                   |
-| 15  | Task palette grouped by function + AI group       | Flow control / Data & logic / Services / Events / AI (prototype entries)                            |
-| 17  | Accordion sections in left & right panels         | Left: Workflows + Task palette sections (persisted). Right: clickable head toggles                  |
-| 18  | Palette group accordions + accordion/minimize fix | Nested group accordions; auto-minimize rail when all sections collapse; scrollable workflow list    |
-| 19  | Control audit: dedupe + relocate controls         | One validation indicator, slim banner, spec-bar + canvas-toolbar placement; see docs/ide-parity.md  |
-| 20  | Drag-to-reorder workflow library rows             | HTML5 drag on `LibraryExplorer` rows; persisted order (`open-workflow-editor:library-order:v1`)     |
-| 21  | Deeper breadcrumbs into container tasks           | `getBreadcrumbPath` walks `for.do`, `fork.branches`, `try`/`catch` nesting; clickable task segments |
-| 22  | Explorer "reveal active file"                     | Active row auto-scrolls into view on tab switch + "◎" reveal button in the Workflows header         |
-| 23  | Settings profiles (export/import JSON)            | `SettingsDialog` export/import; covers theme, mini-map, panels, gateway URL (Bearer token excluded) |
+| #   | Task                                                 | What shipped                                                                                                                                                                                     |
+| --- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 10  | Workflow Library explorer sidebar                    | `LibraryExplorer.tsx` — list, rename, delete, switcher, dirty indicator                                                                                                                          |
+| 11  | Drag tabs to reorder the tab bar                     | HTML5 drag with drop-target feedback on `DocumentTabs`                                                                                                                                           |
+| 12  | Live breadcrumbs bar                                 | `workflow / do / <task>` chain with clickable task segment                                                                                                                                       |
+| 13  | Settings dialog (`Ctrl/Cmd+,`)                       | Theme, panels, mini-map, gateway URL/token                                                                                                                                                       |
+| 14  | Minimap toggle & zoom controls w/ persistence        | `Ctrl+= / - / 0`, palette commands, per-workflow viewport restore                                                                                                                                |
+| 15  | Task palette grouped by function + AI group          | Flow control / Data & logic / Services / Events / AI (prototype entries)                                                                                                                         |
+| 17  | Accordion sections in left & right panels            | Left: Workflows + Task palette sections (persisted). Right: clickable head toggles                                                                                                               |
+| 18  | Palette group accordions + accordion/minimize fix    | Nested group accordions; auto-minimize rail when all sections collapse; scrollable workflow list                                                                                                 |
+| 19  | Control audit: dedupe + relocate controls            | One validation indicator, slim banner, spec-bar + canvas-toolbar placement; see docs/ide-parity.md                                                                                               |
+| 20  | Drag-to-reorder workflow library rows                | HTML5 drag on `LibraryExplorer` rows; persisted order (`open-workflow-editor:library-order:v1`)                                                                                                  |
+| 21  | Deeper breadcrumbs into container tasks              | `getBreadcrumbPath` walks `for.do`, `fork.branches`, `try`/`catch` nesting; clickable task segments                                                                                              |
+| 22  | Explorer "reveal active file"                        | Active row auto-scrolls into view on tab switch + "◎" reveal button in the Workflows header                                                                                                      |
+| 23  | Settings profiles (export/import JSON)               | `SettingsDialog` export/import; covers theme, mini-map, panels, gateway URL (Bearer token excluded)                                                                                              |
+| 24  | E2E parallel flakes root-caused & workers re-enabled | Canvas graph completeness fix (SDK semantic graph omitted mid-chain disconnected tasks); `reuseExistingServer: !CI`; evidence: 61/61 parallel + 183/183 (61×3)                                   |
+| 25  | Palette group drag-to-reorder                        | Drag accordion heads (`application/open-workflow-group`); persisted `palette-group-order:v1`; `orderPaletteGroups` helper                                                                        |
+| 26  | Per-workflow theme overrides                         | `workflow-themes:v1` override map; Settings "Theme for this workflow" + top-bar override dot; resolved theme = override ?? global                                                                |
+| 27  | Canvas multi-select                                  | Modifier-click additive selection, rubber-band, multi-drag/delete; bulk duplicate/delete context menu; graph-complete canvas                                                                     |
+| 28  | Canvas-scoped command-palette UX                     | Zoom/fit/mini-map commands auto-switch to the canvas view on invoke (no more disabled entries)                                                                                                   |
+| 29  | Git workflow hardening (repo-side)                   | `CONTRIBUTING.md` with protected-`main` + `develop`/PR flow and required checks; CI already runs on PRs (`pull_request`); note: branch protection itself must be enabled in GitHub repo settings |
 
 ### VS Code parity round 1 (Tasks 1–9)
 

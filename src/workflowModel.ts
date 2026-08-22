@@ -457,6 +457,31 @@ export function createFlowGraph(document: WorkflowDocument, positions: CanvasPos
     };
   });
 
+  // The SDK semantic graph can omit top-level document tasks that are not part
+  // of its traversal (e.g. disconnected entries mid-list). The canvas must
+  // always mirror the document, so append any missing top-level tasks.
+  const existingNodeIds = new Set(nodes.map((node) => node.id));
+  (document.do ?? []).forEach((item) => {
+    const name = Object.keys(item)[0];
+    const id = `/do/${name}`;
+    if (existingNodeIds.has(id)) return;
+    const task = item[name];
+    nodes.push({
+      id,
+      type: 'task',
+      position: positions[id] ?? { x: 250, y: 140 + nodes.length * defaultTaskGap },
+      data: {
+        label: name,
+        taskType: Object.keys(task)[0] || 'set',
+        taskReference: undefined,
+        task: toPlain(task),
+        portType: undefined,
+      },
+      draggable: true,
+      selectable: true,
+    });
+  });
+
   let edges: FlowEdge[] = graph.edges
     .map((edge) => ({
       id: edge.id,
@@ -712,7 +737,10 @@ export function duplicateTopLevelTask(document: WorkflowDocument, nodeId: string
 
   const duplicate = clone(selected.task);
   delete duplicate.then;
-  nextDo.splice(selected.index + 1, 0, { [name]: duplicate });
+  // Append at the end (like addTopLevelTask): the SDK semantic graph drops
+  // tasks inserted mid-chain that are not reachable, which would hide the
+  // duplicate from the canvas while keeping it in the document.
+  nextDo.push({ [name]: duplicate });
   return next;
 }
 

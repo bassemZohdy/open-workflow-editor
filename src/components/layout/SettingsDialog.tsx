@@ -6,6 +6,9 @@ export interface SettingsDialogProps {
   onClose: () => void;
   theme: AppTheme;
   onThemeChange: (theme: AppTheme) => void;
+  /** Per-workflow theme override (null = follow the default theme). */
+  workflowTheme?: AppTheme | null;
+  onWorkflowThemeChange?: (theme: AppTheme | null) => void;
   leftRailOpen: boolean;
   inspectorOpen: boolean;
   runtimeOpen: boolean;
@@ -27,6 +30,8 @@ export function SettingsDialog({
   onClose,
   theme,
   onThemeChange,
+  workflowTheme = null,
+  onWorkflowThemeChange,
   leftRailOpen,
   inspectorOpen,
   runtimeOpen,
@@ -106,6 +111,21 @@ export function SettingsDialog({
                 checked={showMiniMap}
                 onChange={onToggleMiniMap}
               />
+            </label>
+            <label className="settings-row">
+              <span>Theme for this workflow</span>
+              <select
+                className="settings-control settings-control-inline"
+                aria-label="Theme for this workflow"
+                value={workflowTheme ?? ''}
+                disabled={!onWorkflowThemeChange}
+                onChange={(e) => onWorkflowThemeChange?.((e.target.value || null) as AppTheme | null)}
+              >
+                <option value="">Default (follows editor theme)</option>
+                <option value="light">☀️ Light</option>
+                <option value="dark">🌙 Dark</option>
+                <option value="high-contrast">👁 High contrast</option>
+              </select>
             </label>
           </section>
 

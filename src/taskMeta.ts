@@ -2,8 +2,27 @@ import type { TaskColor, TaskType } from './types';
 
 export type PaletteGroup = 'Flow control' | 'Data & logic' | 'Services' | 'Events' | 'AI';
 
-/** Canonical palette group order (left rail). */
-export const PALETTE_GROUPS: PaletteGroup[] = ['Flow control', 'Data & logic', 'Services', 'Events', 'AI'];
+/** Canonical (default) palette group order (left rail). */
+export const DEFAULT_PALETTE_GROUPS: PaletteGroup[] = [
+  'Flow control',
+  'Data & logic',
+  'Services',
+  'Events',
+  'AI',
+];
+
+/**
+ * Resolves the effective group order: custom (drag-reordered) groups first,
+ * then any missing groups appended in the default order.
+ */
+export function orderPaletteGroups(customOrder: string[]): PaletteGroup[] {
+  if (!customOrder.length) return DEFAULT_PALETTE_GROUPS;
+  const valid = customOrder.filter((group): group is PaletteGroup =>
+    (DEFAULT_PALETTE_GROUPS as string[]).includes(group),
+  );
+  const missing = DEFAULT_PALETTE_GROUPS.filter((group) => !valid.includes(group));
+  return [...valid, ...missing];
+}
 
 export interface PaletteItem {
   type: TaskType;

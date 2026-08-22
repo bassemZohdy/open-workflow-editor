@@ -511,7 +511,15 @@ export function EditorCanvas({
         onConnect={onConnect}
         onEdgesDelete={onEdgesDelete as never}
         onNodesDelete={onNodesDelete as never}
-        onNodeClick={(_, node) => setSelectedId(node.type === 'task' ? node.id : null)}
+        onNodeClick={(event, node) => {
+          if (node.type !== 'task') {
+            if (!event.ctrlKey && !event.metaKey && !event.shiftKey) setSelectedId(null);
+            return;
+          }
+          // Additive modifier-click selection is handled natively by ReactFlow
+          // (multiSelectionKeyCode below); track the last-clicked node as primary.
+          setSelectedId(node.id);
+        }}
         onNodeContextMenu={(event, node) => {
           if (node.type !== 'task') return;
           event.preventDefault();
@@ -525,6 +533,7 @@ export function EditorCanvas({
         onMoveEnd={(_, viewport) => onViewportChange?.(viewport)}
         deleteKeyCode="Delete"
         selectionOnDrag
+        multiSelectionKeyCode={['Meta', 'Control', 'Shift']}
         fitView
         fitViewOptions={{ padding: 0.18 }}
         minZoom={0.35}

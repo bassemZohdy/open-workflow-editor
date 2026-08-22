@@ -1,5 +1,5 @@
-import type { DragEvent, KeyboardEvent, ReactNode } from 'react';
-import { PALETTE_GROUPS, paletteItems, type PaletteItem } from '../../taskMeta';
+import { useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { orderPaletteGroups, paletteItems, type PaletteItem } from '../../taskMeta';
 import type { TaskType } from '../../types';
 import { LibraryExplorer, type LibraryWorkflowRow } from './LibraryExplorer';
 
@@ -23,6 +23,9 @@ export interface PaletteProps {
   /** Accordion state per palette group (only present groups are stored). */
   paletteGroupsExpanded?: Record<string, boolean>;
   onTogglePaletteGroup?: (group: string) => void;
+  /** Drag-reordered palette group ids (unknown/old ids are appended in default order). */
+  paletteGroupOrder?: string[];
+  onReorderPaletteGroups?: (draggedId: string, overId: string) => void;
 }
 
 function RailSection({
@@ -32,6 +35,10 @@ function RailSection({
   onToggle,
   actions,
   variant = 'section',
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
   children,
 }: {
   title: string;
@@ -40,11 +47,40 @@ function RailSection({
   onToggle: () => void;
   actions?: ReactNode;
   variant?: 'section' | 'group';
+  onDragStart?: (event: DragEvent<HTMLButtonElement>) => void;
+  onDragOver?: (event: DragEvent<HTMLDivElement>) => void;
+  onDragLeave?: () => void;
+  onDrop?: (event: DragEvent<HTMLDivElement>) => void;
   children: ReactNode;
 }) {
   const bodyId = `rail-section-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+  const [dropTarget, setDropTarget] = useState(false);
+
+  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+    onDragOver?.(event);
+    if (variant === 'group' && event.dataTransfer.types.includes('application/open-workflow-group')) {
+      event.preventDefault();
+      setDropTarget(true);
+    }
+  };
+
+  const handleDragLeave = () => {
+    onDragLeave?.();
+    setDropTarget(false);
+  };
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    setDropTarget(false);
+    onDrop?.(event);
+  };
+
   return (
-    <div className={`rail-section accordion-${variant}`}>
+    <div
+      className={`rail-section accordion-${variant} ${dropTarget ? 'drop-target' : ''}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       <div className={`accordion-head-row ${expanded ? 'open' : ''}`}>
         <button
           type="button"
@@ -52,6 +88,9 @@ function RailSection({
           aria-expanded={expanded}
           aria-controls={bodyId}
           title={expanded ? `Collapse ${title}` : `Expand ${title}`}
+          draggable={variant === 'group' && Boolean(onDragStart)}
+          onDragStart={onDragStart}
+          onDragEnd={() => setDropTarget(false)}
           onClick={onToggle}
         >
           <span className="accordion-chevron" aria-hidden="true">
@@ -127,7 +166,12 @@ export function Palette({
   onTogglePalette,
   paletteGroupsExpanded = {},
   onTogglePaletteGroup,
+  paletteGroupOrder = [],
+  onReorderPaletteGroups,
 }: PaletteProps) {
+  // Hook state — must be declared before the conditional collapsed branch.
+  const [draggedGroup, setDraggedGroup] = useState<string | null>(null);
+
   if (collapsed) {
     return (
       <aside className="left-rail left-rail-collapsed" aria-label="Collapsed task palette">
@@ -147,6 +191,7 @@ export function Palette({
   }
 
   const availableCount = paletteItems.filter((item) => !item.comingSoon).length;
+  const groups = orderPaletteGroups(paletteGroupOrder);
 
   return (
     <aside className="left-rail" aria-label="Task palette">
@@ -215,7 +260,7 @@ export function Palette({
           onToggle={onTogglePalette || (() => undefined)}
         >
           <div className="palette-list">
-            {PALETTE_GROUPS.map((group) => {
+            {groups.map((group) => {
               const groupItems = paletteItems.filter((item) => item.group === group);
               if (!groupItems.length) return null;
               const groupCount = groupItems.filter((item) => !item.comingSoon).length;
@@ -227,6 +272,34 @@ export function Palette({
                   variant="group"
                   expanded={paletteGroupsExpanded[group] !== false}
                   onToggle={() => onTogglePaletteGroup?.(group)}
+                  onDragStart={
+                    onReorderPaletteGroups
+                      ? (event) => {
+                          event.dataTransfer.setData('application/open-workflow-group', group);
+                          event.dataTransfer.effectAllowed = 'move';
+                          setDraggedGroup(group);
+                        }
+                      : undefined
+                  }
+                  onDragOver={
+                    onReorderPaletteGroups
+                      ? (event) => {
+                          if (!draggedGroup || draggedGroup === group) return;
+                          event.dataTransfer.dropEffect = 'move';
+                        }
+                      : undefined
+                  }
+                  onDragLeave={undefined}
+                  onDrop={
+                    onReorderPaletteGroups
+                      ? (event) => {
+                          event.preventDefault();
+                          const dragged = event.dataTransfer.getData('application/open-workflow-group');
+                          setDraggedGroup(null);
+                          if (dragged && dragged !== group) onReorderPaletteGroups(dragged, group);
+                        }
+                      : undefined
+                  }
                 >
                   {groupItems.map((item) => (
                     <PaletteItemRow key={item.type} item={item} onAddTask={onAddTask} />

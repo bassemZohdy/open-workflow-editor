@@ -234,6 +234,88 @@ test('topbar avatar is a centered circle', async ({ page }) => {
 });
 
 // ---------------------------------------------------------------------------
+// Tasks 25-28: palette group reorder, per-workflow theme, multi-select,
+// canvas-scoped palette commands
+// ---------------------------------------------------------------------------
+
+test('palette groups reorder by drag and persist', async ({ page }) => {
+  // Tall viewport keeps both group heads visible (HTML5 drags don't scroll mid-drag).
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.reload();
+  const first = page.getByRole('button', { name: /^Flow control/ });
+  const services = page.getByRole('button', { name: /^Services/ });
+  await expect(first).toBeVisible();
+  // Drag Services group onto Flow control; retry once in case the first
+  // drag races with the boot render.
+  const hasOrder = () =>
+    page.evaluate(() =>
+      (window.localStorage.getItem('open-workflow-editor:palette-group-order:v1') || '').includes('Services'),
+    );
+  for (let attempt = 0; attempt < 2 && !(await hasOrder()); attempt += 1) {
+    await services.dragTo(first);
+  }
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.localStorage.getItem('open-workflow-editor:palette-group-order:v1')),
+    )
+    .toContain('Services');
+  const palette = page.locator('.left-rail .palette-list .accordion-group');
+  await expect(palette.first()).toContainText('Services');
+  // Persisted across reload.
+  await page.reload();
+  await expect(page.locator('.left-rail .palette-list .accordion-group').first()).toContainText('Services');
+});
+
+test('per-workflow theme override applies and follows the workflow', async ({ page }) => {
+  await page.keyboard.press('Control+,');
+  const dialog = page.getByRole('dialog', { name: 'Settings' });
+  await dialog.getByLabel('Theme for this workflow').selectOption('dark');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('.theme-override-dot')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+
+  // Switch to another workflow (no override) — falls back to the default theme.
+  await page
+    .getByRole('listbox', { name: 'Saved workflows' })
+    .locator('.library-item', { hasText: 'rta-vehicle-ownership-renewal' })
+    .click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await expect(page.locator('.theme-override-dot')).toHaveCount(0);
+
+  // Back to the overridden workflow.
+  await page
+    .getByRole('listbox', { name: 'Saved workflows' })
+    .locator('.library-item', { hasText: 'rta-nol-travel-pass-renewal' })
+    .click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+});
+
+test('canvas multi-select via modifier click with bulk duplicate', async ({ page }) => {
+  const firstNode = page.locator('.react-flow__node-task').first();
+  const secondNode = page.locator('.react-flow__node-task').nth(1);
+  await firstNode.waitFor();
+  await firstNode.click();
+  await secondNode.click({ modifiers: ['Control'] });
+  const box = await secondNode.boundingBox();
+  await page.mouse.click(box.x + 20, box.y + 10, { button: 'right' });
+  const menu = page.locator('.context-menu');
+  await expect(menu.getByRole('menuitem', { name: /Duplicate 2 tasks/ })).toBeVisible();
+  await menu.getByRole('menuitem', { name: /Duplicate 2 tasks/ }).click();
+  await expect(page.locator('.react-flow__node-task')).toHaveCount(10);
+});
+
+test('canvas-scoped palette commands switch to the canvas view', async ({ page }) => {
+  await page.getByRole('button', { name: 'Specification' }).click();
+  await expect(page.getByRole('button', { name: 'Canvas' })).not.toHaveClass(/active/);
+  await page.keyboard.press('Control+Shift+P');
+  await page.getByRole('dialog', { name: 'Command palette' }).waitFor();
+  await page.keyboard.type('reset canvas zoom');
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('button', { name: 'Canvas' })).toHaveClass(/active/);
+  await expect(page.locator('.canvas-shell')).toBeVisible();
+});
+
+// ---------------------------------------------------------------------------
 // Task 4: independent panel collapse (right rail, icon strips)
 // ---------------------------------------------------------------------------
 
