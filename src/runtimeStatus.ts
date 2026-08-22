@@ -50,8 +50,8 @@ function isActiveRuntimeState(state: string): boolean {
   return ['queued', 'pending', 'starting', 'running', 'in_progress', 'in-progress'].includes(state);
 }
 
-function formatRuntimeDuration(milliseconds: number): string {
-  if (!Number.isFinite(milliseconds)) return '—';
+function formatRuntimeDuration(milliseconds?: number): string {
+  if (milliseconds === undefined || !Number.isFinite(milliseconds)) return '—';
   if (milliseconds < 1000) return `${Math.max(0, Math.round(milliseconds))} ms`;
   return `${(milliseconds / 1000).toFixed(1)} s`;
 }

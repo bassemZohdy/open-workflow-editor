@@ -6,6 +6,7 @@ import type {
   WorkflowFormat,
   WorkflowPersistence,
   WorkflowRecord,
+  WorkflowRevision,
 } from './types';
 
 export const WORKFLOW_LIBRARY_VERSION = 1;
@@ -19,6 +20,7 @@ export interface CreateWorkflowRecordInput {
   format?: WorkflowFormat;
   positions?: CanvasPositions;
   updatedAt?: number;
+  revisions?: WorkflowRevision[];
 }
 
 export function createWorkflowRecord({
@@ -28,14 +30,50 @@ export function createWorkflowRecord({
   format = 'yaml',
   positions = {},
   updatedAt = Date.now(),
+  revisions,
 }: CreateWorkflowRecordInput): WorkflowRecord {
+  const normFormat = format === 'json' ? 'json' : 'yaml';
+  const initialRevisions: WorkflowRevision[] = revisions || [
+    {
+      id: `rev-${updatedAt}`,
+      timestamp: updatedAt,
+      specification,
+      format: normFormat,
+      summary: 'Initial revision',
+    },
+  ];
+
   return {
     id,
     name: document?.document?.name || 'untitled-workflow',
     specification,
-    format: format === 'json' ? 'json' : 'yaml',
+    format: normFormat,
     positions: clone(positions),
     updatedAt,
+    revisions: clone(initialRevisions),
+  };
+}
+
+export function recordWorkflowRevision(record: WorkflowRecord, summary = 'Saved changes'): WorkflowRecord {
+  const nextRevisions = clone(record.revisions || []);
+  const latest = nextRevisions[0];
+
+  if (!latest || latest.specification !== record.specification) {
+    nextRevisions.unshift({
+      id: `rev-${Date.now()}`,
+      timestamp: Date.now(),
+      specification: record.specification,
+      format: record.format,
+      summary,
+    });
+  }
+
+  // Keep up to 30 revisions
+  const capped = nextRevisions.slice(0, 30);
+
+  return {
+    ...record,
+    revisions: capped,
   };
 }
 
@@ -59,15 +97,33 @@ export function parseWorkflowLibrary(raw: string | null): WorkflowRecord[] {
           typeof (record as { id?: unknown }).id === 'string' &&
           typeof (record as { specification?: unknown }).specification === 'string',
       )
-      .map((record) => ({
-        ...(record as unknown as WorkflowRecord),
-        name: (record.name as string) || 'untitled-workflow',
-        format: record.format === 'json' ? 'json' : 'yaml',
-        positions:
-          record.positions && typeof record.positions === 'object'
-            ? (record.positions as CanvasPositions)
-            : {},
-      }));
+      .map((record) => {
+        const spec = String(record.specification);
+        const format: WorkflowFormat = record.format === 'json' ? 'json' : 'yaml';
+        const updatedAt = typeof record.updatedAt === 'number' ? record.updatedAt : Date.now();
+        const revisions: WorkflowRevision[] = Array.isArray(record.revisions)
+          ? (record.revisions as WorkflowRevision[])
+          : [
+              {
+                id: `rev-${updatedAt}`,
+                timestamp: updatedAt,
+                specification: spec,
+                format,
+                summary: 'Initial revision',
+              },
+            ];
+
+        return {
+          ...(record as unknown as WorkflowRecord),
+          name: (record.name as string) || 'untitled-workflow',
+          format,
+          positions:
+            record.positions && typeof record.positions === 'object'
+              ? (record.positions as CanvasPositions)
+              : {},
+          revisions,
+        };
+      });
   } catch {
     return [];
   }
@@ -77,9 +133,18 @@ export function serializeWorkflowLibrary(workflows: WorkflowRecord[]): string {
   return JSON.stringify({ version: WORKFLOW_LIBRARY_VERSION, workflows }, null, 2);
 }
 
-export function upsertWorkflowRecord(workflows: WorkflowRecord[], record: WorkflowRecord): WorkflowRecord[] {
+export function upsertWorkflowRecord(
+  workflows: WorkflowRecord[],
+  record: WorkflowRecord,
+  summary?: string,
+): WorkflowRecord[] {
+  const existing = workflows.find((item) => item.id === record.id);
+  const updatedRecord = recordWorkflowRevision(
+    record,
+    summary || (existing ? 'Saved updates' : 'Created workflow'),
+  );
   const next = workflows.filter((item) => item.id !== record.id);
-  next.push(clone(record));
+  next.push(clone(updatedRecord));
   return next.sort((left, right) => left.name.localeCompare(right.name));
 }
 

@@ -1,27 +1,43 @@
 # Runtime and persistence boundaries
 
-The browser application is an authoring surface with a deliberately limited local demo engine. It validates and edits Open Workflow documents, and the demo engine simulates task progress, calls, waits, events, failures, and logs without upstream network access. Inline JavaScript tasks are validated as functions receiving `{ input, context, catalogs }` and are sent to the Node sandbox boundary exposed by the development server; object results are merged into demo context. `run.workflow` sub-flows are represented and simulated as catalog-resolved references. Production workflows, credentials, and upstream workflow endpoints remain behind the server-side gateway.
+The browser application is an authoring surface with a deliberately limited local demo engine and a production runtime gateway client. It validates and edits Open Workflow documents, and the demo engine simulates task progress, calls, waits, events, failures, and logs without upstream network access. Inline JavaScript tasks are validated as functions receiving `{ input, context, catalogs }` and are evaluated in the local Node sandbox boundary exposed by the development server; object results are merged into context. `run.workflow` subflows are cross-referenced and scaffolded directly from the inspector. Production workflows, credentials, and upstream workflow endpoints remain behind the server-side gateway.
 
-## Runtime contract
+---
 
-An embedding application may provide an adapter with these operations:
+## Runtime Gateway Contract
 
-- `validate(workflow)`
-- `start(workflow, inputs)`
-- `status(runId)`
-- `cancel(runId)`
-- `logs(runId)`
+The production runtime gateway exposes the following HTTP endpoints:
 
-`src/runtimeAdapter.js` validates that contract, supplies a disconnected implementation, and maps the contract to a server-side HTTP gateway. `src/demoRuntime.js` supplies a deterministic browser-local adapter for debug and demonstration only; its UI is labeled DEMO and its mocked calls never leave the browser. The gateway mode remains unavailable until a gateway URL is configured, so demo behavior cannot be mistaken for production execution.
+- `GET /health` — Gateway status, Open Workflow Specification version, JVM/Node metadata, and live active run count.
+- `GET /audit` — Structured audit trail recording timestamp, operation, run ID, and client IP.
+- `POST /validate` — Validates workflow AST and JSON/YAML document against the Open Workflow Specification (1.0.3).
+- `POST /runs` — Submits workflow definition and input payload for execution.
+- `GET /runs/:id` — Queries real-time status and state transitions.
+- `GET /runs/:id/logs` — Retrieves execution log stream.
+- `GET /runs/:id/events` — Server-Sent Events (SSE) telemetry stream (`text/event-stream`) broadcasting real-time progress events.
+- `DELETE /runs/:id` — Cancels an active execution thread.
 
-The runtime target is selected in [`runtime-decision.md`](runtime-decision.md). Selecting one is a product and deployment decision that must cover Open Workflow Specification version support, expression semantics, retries, credentials, endpoint policy, and observability. The Node sandbox is a narrow JavaScript task boundary, not a complete production workflow runtime; it must be moved to an isolated process/container or a hardened language runtime before executing hostile multi-tenant code.
+The gateway supports configurable Bearer token authorization (`Authorization: Bearer <token>`), in-memory sliding-window rate limiting (`429 Too Many Requests`), and CORS pre-flight handling.
 
-## Persistence contract
+---
 
-`src/workflowStore.js` provides the local storage implementation and the `list`/`replace`/`clear` seam used by the editor. `replaceWorkflowRecordsWithState` provides the asynchronous `saving`/`saved`/`error` transition contract, and the UI applies records optimistically before persistence completes. A remote implementation can replace those operations without changing the workflow document or canvas model; it must additionally provide conflict detection and retry behavior before production use.
+## Open Workflow Java SDK (7.x) Integration
 
-## Security prerequisites for a future runtime
+For enterprise deployments running the Open Workflow Java SDK (7.x) execution engine, the editor connects to the daemon via the REST/SSE bridge:
 
-Before enabling production runtime controls, the integration must define credential storage outside the browser bundle, endpoint allowlists, expression and input handling, audit logging, cancellation authorization, and redaction rules for task inputs, outputs, and logs.
+- Reference bridge script: `server/javaSdkBridge.js`
+- Full integration and Spring Boot configuration guide: [`docs/java-sdk-gateway.md`](java-sdk-gateway.md)
 
-The server-side environment contract is defined in `server/runtimeGatewayConfig.js`. `OPEN_WORKFLOW_RUNTIME_AUTH_TOKEN` is intentionally not a `VITE_` variable and is never included in the public runtime configuration. `VITE_RUNTIME_GATEWAY_URL`, when used, identifies only the browser-to-gateway hop; it is not an upstream credential.
+---
+
+## Persistence Contract
+
+`src/workflowStore.ts` provides the local storage implementation and the `list`/`replace`/`clear` seam used by the editor. `replaceWorkflowRecordsWithState` provides the asynchronous `saving`/`saved`/`error` transition contract, and the UI applies records optimistically before persistence completes. In-memory tab states are preserved across multi-document tab switches. The native Web File System Access API (`src/fileSystemAdapter.ts`) enables direct local file open and save operations.
+
+---
+
+## Security Architecture
+
+1. **Server-Side Secrets:** Upstream credentials remain in the server environment (`server/runtimeGatewayConfig.js`).
+2. **Client Authorization:** The browser Runtime Panel and the Settings dialog (`Ctrl/Cmd+,`) allow operators to configure a custom Gateway URL and Bearer Auth Token with `localStorage` persistence; Settings broadcasts the change so the Runtime console picks it up live (`open-workflow:gateway-config-changed`).
+3. **Execution Sandbox Isolation:** Node `vm` workers are isolated to development simulation; production execution is delegated to the hardened Java/Go engine daemon.

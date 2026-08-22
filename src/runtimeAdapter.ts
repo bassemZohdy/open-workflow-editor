@@ -69,6 +69,7 @@ export function createRuntimeAdapter(overrides: Partial<RuntimeAdapter> = {}): R
 
 export interface HttpRuntimeAdapterOptions {
   baseUrl?: string;
+  authToken?: string;
   fetchImpl?: typeof fetch;
   headers?: Record<string, string>;
 }
@@ -80,11 +81,16 @@ export interface HttpRuntimeAdapterOptions {
  */
 export function createHttpRuntimeAdapter({
   baseUrl,
+  authToken,
   fetchImpl = globalThis.fetch,
   headers = {},
 }: HttpRuntimeAdapterOptions = {}): RuntimeAdapter {
   const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
   if (typeof fetchImpl !== 'function') throw new TypeError('A fetch implementation is required.');
+
+  const authHeader: Record<string, string> = authToken?.trim()
+    ? { authorization: `Bearer ${authToken.trim()}` }
+    : {};
 
   const request = async (
     operation: string,
@@ -96,6 +102,7 @@ export function createHttpRuntimeAdapter({
       method,
       headers: {
         accept: 'application/json',
+        ...authHeader,
         ...headers,
         ...(body === undefined ? {} : { 'content-type': 'application/json' }),
       },

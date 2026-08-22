@@ -61,9 +61,17 @@ The editor is a workflow instrument panel: a quiet technical workbench where the
 - **Anti-references:** Avoid generic SaaS dashboard card grids, dark IDE chrome, glassmorphism, decorative gradients, and tiny low-contrast labels that make the graph feel like a miniature.
 - **Token ownership/runtime mapping:** Existing CSS variables in `src/styles.css` remain the runtime source for the current palette. This file mirrors the accepted semantic roles; changes to durable values must update both this file and the shared stylesheet tokens in the same changeset.
 
-## Colors
+## Colors & Themes
 
-The product uses a restrained cool-neutral shell: `primary` blue for safe actions and focus, `ink` for orientation, `muted` for secondary copy, `surface` for working panels, `canvas` for the graph field, and `line` for structure. `success`, `warning`, and `danger` are semantic state colors, not decoration. Task colors are categorical accents and must keep a readable text/icon counterpart.
+The product supports three accessibility themes:
+
+1. **Light:** Cool-neutral shell with `#376FE1` primary, `#FFFFFF` working surfaces, `#DFE4EB` structural lines, and categorical task accents.
+2. **Dark:** Deep slate background (`#0D1117`), `#161B22` working surfaces (`#21262D` soft surface), and high-contrast readable text.
+3. **High-Contrast:** Pure black background (`#000000`), `#FFFFFF` text, and bold 2px borders for WCAG AAA visibility.
+
+## Code Editor Theming
+
+The Specification view uses CodeMirror 6 with a dedicated set of editor tokens (`--cm-keyword`, `--cm-property`, `--cm-string`, `--cm-literal`, `--cm-comment`, `--cm-punct`, `--cm-gutter-bg`, `--cm-active-line`, `--cm-selection`) that are defined alongside the palette in each of the three theme blocks in `src/styles.css`, keeping syntax highlighting consistent with the surrounding chrome.
 
 ## Typography
 
@@ -71,19 +79,29 @@ DM Sans carries interface copy, labels, and task names. DM Mono is reserved for 
 
 ## Layout
 
-Desktop uses three persistent regions: task palette, central workspace, and operations rail. The workspace owns the canvas/specification viewport; the operations rail owns Inspector and Runtime scroll surfaces. Controls wrap within their own header row rather than clipping or pushing the canvas. At narrow widths, the palette and operations rail collapse into document-flow sections so no critical action is hidden behind an overlay.
+Desktop uses persistent regions:
 
-Side rails follow IDE conventions: the task palette can collapse to a labeled strip, Inspector and Runtime can collapse independently, and Focus Canvas collapses all side content while keeping explicit expand controls visible. The editor grid stretches its single row so the graph renderer always retains a measurable surface during these transitions.
+1. **Top Navigation Bar:** Brand mark, save state + Save action, panel focus-mode toggle, template catalog trigger, revision history trigger, shortcuts trigger (`?`/`F1`), theme selector, and workspace avatar. (Workflow validation is _not_ a button here — it runs live and surfaces in the mode-tabs pill, status bar and Problems panel; the re-check action lives in the command palette.)
+2. **Task Palette (Left Rail):** Workflow Library explorer (VS Code Explorer analog and the single workflow-switcher surface — open, inline rename, delete, dirty indicators) above accessible draggable task primitives with quick-add actions. One contextual "+" per surface (Workflows header, tab bar) — no duplicate rail-header "+".
+3. **Multi-Document Tabs Bar:** Above the central workspace, presenting open documents, dirty state indicators, quick-close, drag-to-reorder, and local file open/save actions.
+4. **Central Workspace:** Live breadcrumbs (`workflow / do / <task>`) above the workflow title; canvas/specification mode tabs with the single validation pill; document-level actions (Duplicate, Delete, Undo, Redo, Deploy bundle) in the header. The canvas carries its own toolbar (search, filter, align, fit, SVG/PNG, Auto/Manual layout) plus mini-map and zoom controls; the Specification view carries its own bar (file name, YAML/JSON toggle, Import file, Format, Copy, Export).
+5. **Operations Rail (Right Rail):** Independent collapsible panels for Task Property Inspector and Runtime Console.
+6. **Bottom Dock:** Live status bar (selection, problems count, cursor position, format, save state, runtime connectivity) and the collapsible Problems panel.
 
-The spacing rhythm is intentionally compact: 8px control gaps, 16px rail sections, and 28px workspace breathing room. The graph uses fit-to-content after measured mount and keeps task nodes large enough to scan without collision. Runtime status, progress, and logs remain in the side rail rather than expanding the canvas vertically.
+Side-rail widths are user-resizable: 6 px drag gutters between the rails and the workspace feed `--left-rail-width` / `--right-rail-width` CSS variables (defaults 246 px / 340 px), with collapse toggles preserved.
 
-## Elevation & Depth
+## Modal Dialogs
 
-Hierarchy comes from white surfaces, one-pixel structural borders, and short low-blur shadows only where a surface needs separation. The canvas is a recessed field; the operations rail is a stable reading surface. Avoid stacking shadows on every nested panel and never use blur as the primary hierarchy cue.
+Modal overlays share consistent styling:
 
-## Shapes
+- **Workflow Template Catalog (`TemplateLibraryDialog`):** Search, category filtering, tag badges, and 1-click instantiate.
+- **Revision History & Diffing (`RevisionHistoryDialog`):** Snapshot timeline, line-by-line Myers LCS visual diff viewer, and 1-click restore.
+- **Deployment Bundle (`DeploymentBundleDialog`):** Multi-file code viewer (Dockerfile, Kubernetes manifests, `workflow.yaml`, `README.md`) with copy and download actions.
+- **Keyboard Shortcuts (`ShortcutsDialog`):** Categorized hotkey quick-reference sheet (`?` / `F1`).
+- **Settings (`SettingsDialog`, `Ctrl/Cmd+,`):** Appearance (theme, mini-map), panel visibility, panel-width reset, and runtime gateway URL/bearer token.
+- **Command Palette (`CommandPalette`, `Ctrl/Cmd+Shift+P`) & Quick Open (`QuickOpenDialog`, `Ctrl/Cmd+P`):** Fuzzy, keyboard-first overlays for actions, workflow switching, and workspace-wide task search.
 
-Controls and panels use 4–12px radii from the token set. Nodes are compact rectangular work units with a categorical accent and icon container. Focus is a solid blue outline with offset; selection is communicated by border and state styling, not color alone.
+See [`docs/ide-parity.md`](docs/ide-parity.md) for the full surface and shortcut inventory.
 
 ## Components
 
@@ -91,29 +109,17 @@ Controls and panels use 4–12px radii from the token set. Nodes are compact rec
 
 Every button, tab, input, node, and drop target has default, hover, focus-visible, active/selected, disabled, and error behavior where applicable. Runtime uses explicit DEMO and GATEWAY labels; mocked execution never uses production-success language without the DEMO context.
 
+### Task Nodes & Container Visualization
+
+Nodes are compact rectangular units with categorical accents and icons. Nested container tasks (`do`, `for`, `fork`, `try`/`catch`, `switch`) display sub-item pills for internal tasks and branches. `try`/`catch` nodes render a dedicated `⊙` icon and indigo palette.
+
+### Task Palette Groups & Rail Accordions
+
+The left rail contains accordion sections — **Workflows** (library explorer) and **Task palette** — each with a chevron header and item count; open/collapsed state persists per user. The task palette is grouped functionally: **Flow control** (`do`, `switch`, `for`, `fork`, `try`), **Data & logic** (`set`, `run`), **Services** (`call`, `wait`), **Events** (`emit`, `listen`, `raise`) — plus a prototype **AI** group (`llm-call`, `ai-agent-call`, magenta accent) whose entries are marked _coming soon_ and are not draggable or addable until the DSL/schema supports them. The right rail's Inspector and Runtime heads are clickable accordion toggles with chevrons.
+
 ### Buttons and actions
 
 Primary is reserved for the next safe action (`Start run`, `Save`). Secondary is outlined for utilities. Destructive actions use the danger color and remain separated from routine actions. Important actions retain stable dimensions while busy.
-
-### Navigation and data display
-
-Canvas and Specification are peer tabs in the workspace. The right operations rail is not a route; it is persistent context for the selected task and active run. Progress rows preserve task order and logs use monospace with bounded internal scrolling.
-
-### Forms and overlays
-
-Fields use visible labels and app-owned inline errors. Switch cases use an explicit list editor with both click and drag-add paths. The drag path is progressive enhancement; the Add case button is always available. There are no browser-native dialogs in the authoring surface.
-
-### Iconography
-
-The current symbol set is lightweight text/icon glyphs with colored containers. Keep icons supportive, preserve a visible label for actions, and do not add icon-only controls without an accessible name.
-
-### Motion
-
-Motion is restrained and functional: short hover elevation, fit-to-view transitions, and a save pulse communicate state. Reduce motion to instant or opacity-only transitions under `prefers-reduced-motion: reduce`.
-
-### Content and data visualization
-
-Copy uses direct technical verbs: Save, Validate, Start run, Cancel, Refresh, Add case. Runtime logs are diagnostic evidence, not marketing copy. Mocked endpoint names in the sample workflow are intentionally illustrative and never imply network access in DEMO mode.
 
 ## Do's and Don'ts
 

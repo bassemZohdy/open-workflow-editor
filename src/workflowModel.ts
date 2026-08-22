@@ -395,7 +395,7 @@ type ElkInstance = InstanceType<(typeof import('elkjs/lib/elk.bundled.js'))['def
 let elkPromise: Promise<ElkInstance> | undefined;
 
 const FLOW_NODE_WIDTH = 208;
-const FLOW_NODE_HEIGHT = 62;
+const FLOW_NODE_HEIGHT = 74;
 const FLOW_PORT_WIDTH = 83;
 const FLOW_PORT_HEIGHT = 42;
 
@@ -431,7 +431,7 @@ export function createFlowGraph(document: WorkflowDocument, positions: CanvasPos
     (node) => node.type !== GraphNodeType.Start && node.type !== GraphNodeType.End,
   );
   const taskCount = tasks.length;
-  const defaultTaskGap = 50;
+  const defaultTaskGap = 75;
 
   const nodes: FlowNode[] = graphNodes.map((node) => {
     const isPort = node.type === GraphNodeType.Start || node.type === GraphNodeType.End;
@@ -537,9 +537,9 @@ export async function autoLayoutFlow(document: WorkflowDocument): Promise<Canvas
       'elk.algorithm': 'layered',
       'elk.direction': 'DOWN',
       'elk.edgeRouting': 'ORTHOGONAL',
-      'elk.spacing.nodeNode': '24',
-      'elk.layered.spacing.nodeNodeBetweenLayers': '44',
-      'elk.layered.spacing.edgeNodeBetweenLayers': '22',
+      'elk.spacing.nodeNode': '28',
+      'elk.layered.spacing.nodeNodeBetweenLayers': '54',
+      'elk.layered.spacing.edgeNodeBetweenLayers': '26',
       'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
       'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
       'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
@@ -556,6 +556,7 @@ export async function autoLayoutFlow(document: WorkflowDocument): Promise<Canvas
 }
 
 export interface TopLevelTask {
+  id: string;
   index: number;
   name: string;
   task: TaskDefinition;
@@ -570,6 +571,7 @@ export function getTopLevelTask(document: WorkflowDocument, nodeId: string | nul
   if (index < 0) return null;
   const task = doList[index][taskName];
   return {
+    id: `/do/${taskName}`,
     index,
     name: taskName,
     task,
@@ -658,7 +660,12 @@ export function updateTopLevelTaskField(
     if (!target[key] || typeof target[key] !== 'object') target[key] = {};
     target = target[key] as Record<string, unknown>;
   });
-  target[path[path.length - 1]] = value;
+  const lastKey = path[path.length - 1];
+  if (value === undefined) {
+    delete target[lastKey];
+  } else {
+    target[lastKey] = value;
+  }
   validate('Workflow', next);
   return next;
 }
@@ -731,11 +738,35 @@ export function validateGraph(document: WorkflowDocument): GraphIssue[] {
     names.add(name);
   });
 
+  const availableFunctions = new Set(Object.keys(document.use?.functions || {}));
+  if (document.use?.functions) {
+    const fns = document.use.functions;
+    Object.keys(fns).forEach((fnName) => {
+      const def = fns[fnName];
+      if (!def || typeof def !== 'object') {
+        issues.push({
+          path: `/use/functions/${fnName}`,
+          message: `Function definition for “${fnName}” is invalid.`,
+        });
+      }
+    });
+  }
   doList.forEach((item) => {
     const name = Object.keys(item)[0];
     const task = item[name];
     if (typeof task.then === 'string' && !names.has(task.then)) {
       issues.push({ path: `/do/${name}/then`, message: `Task target “${task.then}” does not exist.` });
+    }
+    if (typeof task.call === 'string') {
+      const isHttp = Boolean(task.with && (task.with.endpoint || task.with.method));
+      if (!isHttp && !task.call.startsWith('http://') && !task.call.startsWith('https://')) {
+        if (document.use?.functions && !availableFunctions.has(task.call)) {
+          issues.push({
+            path: `/do/${name}/call`,
+            message: `Function call target “${task.call}” is not defined in use.functions.`,
+          });
+        }
+      }
     }
   });
 

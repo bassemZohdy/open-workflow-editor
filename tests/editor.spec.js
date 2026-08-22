@@ -6,9 +6,36 @@ test.beforeEach(async ({ page }) => {
   await page.reload();
 });
 
+/** Replaces the whole specification text inside the CodeMirror editor. */
+async function setSpecText(page, text) {
+  await page.waitForFunction(() => Boolean(window.__specEditorView));
+  await page.evaluate((value) => {
+    const view = window.__specEditorView;
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } });
+  }, text);
+}
+
+/**
+ * Asserts the full editor document contains a substring. CodeMirror virtualizes
+ * its viewport, so DOM textContent only covers the visible lines; the editor's
+ * state document is the source of truth.
+ */
+async function expectSpecToContain(page, text) {
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => (window.__specEditorView ? window.__specEditorView.state.doc.toString() : '')),
+      {
+        timeout: 8000,
+      },
+    )
+    .toContain(text);
+}
+
 test('keeps runtime controls explicit and disconnected without a gateway', async ({ page }) => {
   await expect(page.locator('.side-runtime-panel')).not.toHaveClass(/runtime-panel-collapsed/);
-  await expect(page.getByRole('button', { name: 'Validate workflow' })).toBeVisible();
+  // Validation state lives in the mode-tabs pill + problems panel, not a toolbar button.
+  await expect(page.getByText('Valid specification')).toBeVisible();
   await expect(
     page.locator('.side-runtime-panel').getByRole('button', { name: 'Validate workflow' }),
   ).toHaveCount(0);
@@ -41,7 +68,10 @@ test('runs a workflow in the local demo engine', async ({ page }) => {
 });
 
 test('adds multiple switch cases through the inspector drop zone', async ({ page }) => {
-  await page.getByLabel('Dubai Government workflow examples').selectOption('rta-vehicle-ownership-renewal');
+  await page
+    .getByRole('listbox', { name: 'Saved workflows' })
+    .locator('.library-item', { hasText: 'rta-vehicle-ownership-renewal' })
+    .click();
   await page.getByRole('group', { name: 'switch task checkRenewal' }).click();
   await expect(page.getByText('2 configured')).toBeVisible();
 
@@ -71,13 +101,13 @@ test('shows shared task options and HTTP request attributes', async ({ page }) =
   await expect(page.getByLabel('Task output mapping')).toBeVisible();
   await expect(page.getByLabel('Task metadata')).toBeVisible();
 
-  await page.locator('.inspector-parameter-section summary').click();
+  await page.locator('.inspector-parameter-section summary').first().click();
   await expect(page.getByRole('button', { name: 'Add header' })).toBeHidden();
-  await page.locator('.inspector-parameter-section summary').click();
+  await page.locator('.inspector-parameter-section summary').first().click();
 
   await expect(page.getByRole('button', { name: 'Add header' })).toBeVisible();
   await page.getByRole('button', { name: 'Specification' }).click();
-  await expect(page.locator('.spec-view textarea')).toContainText('verifyNolAccount');
+  await expectSpecToContain(page, 'verifyNolAccount');
 });
 
 test('shows JavaScript tasks with the Node sandbox security boundary', async ({ page }) => {
@@ -114,8 +144,8 @@ test('supports validated JavaScript functions and sub-flow references', async ({
   await page.getByLabel('Sub-flow name', { exact: true }).fill('renewal-notification');
   await page.getByLabel('Sub-flow name', { exact: true }).blur();
   await page.getByRole('button', { name: 'Specification' }).click();
-  await expect(page.locator('.spec-view textarea')).toContainText('renewal-notification');
-  await expect(page.locator('.spec-view textarea')).toContainText('workflow:');
+  await expectSpecToContain(page, 'renewal-notification');
+  await expectSpecToContain(page, 'workflow:');
 });
 
 test('builds typed JSON values and ISO duration controls', async ({ page }) => {
@@ -128,7 +158,7 @@ test('builds typed JSON values and ISO duration controls', async ({ page }) => {
   await body.getByLabel('HTTP request body 3 value').fill('2026-08-20');
   await body.getByLabel('HTTP request body 3 value').blur();
   await page.getByRole('button', { name: 'Specification' }).click();
-  await expect(page.locator('.spec-view textarea')).toContainText("renewalDate: '2026-08-20'");
+  await expectSpecToContain(page, "renewalDate: '2026-08-20'");
 
   await page.getByRole('button', { name: 'Canvas' }).click();
   await page.getByRole('button', { name: 'Add Wait task' }).press('Enter');
@@ -136,7 +166,7 @@ test('builds typed JSON values and ISO duration controls', async ({ page }) => {
   await page.getByLabel('Wait duration amount').fill('10');
   await page.getByLabel('Wait duration unit').selectOption('M');
   await page.getByRole('button', { name: 'Specification' }).click();
-  await expect(page.locator('.spec-view textarea')).toContainText('wait: PT10M');
+  await expectSpecToContain(page, 'wait: PT10M');
 });
 
 test('creates a task from the accessible palette and synchronizes its properties', async ({ page }) => {
@@ -146,11 +176,11 @@ test('creates a task from the accessible palette and synchronizes its properties
   const task = page.getByRole('group', { name: 'set task setTask' });
   await expect(task).toBeVisible();
 
-  const valueInput = page.locator('.inspector .field').filter({ hasText: 'Value' }).locator('input');
+  const valueInput = page.getByRole('textbox', { name: 'Set task variables 1 value' });
   await valueInput.fill('ready');
   await valueInput.blur();
   await page.getByRole('button', { name: 'Specification' }).click();
-  await expect(page.locator('.spec-view textarea')).toContainText('ready');
+  await expectSpecToContain(page, 'ready');
 });
 
 test('supports drag/drop, invalid specification feedback, and workflow duplication', async ({ page }) => {
@@ -166,61 +196,116 @@ test('supports drag/drop, invalid specification feedback, and workflow duplicati
   await expect(page.getByRole('group', { name: /call task callTask/ })).toBeVisible();
 
   await page.getByRole('button', { name: 'Specification' }).click();
-  await page.locator('.spec-view textarea').fill('document: [');
+  await setSpecText(page, 'document: [');
   await expect(page.getByText('Invalid specification')).toBeVisible();
 
-  await page.locator('.spec-view textarea').fill(`document:
+  await setSpecText(
+    page,
+    `document:
   dsl: "1.0.3"
   namespace: default
   name: customer-onboarding
   version: "0.1.0"
-do: []`);
+do: []`,
+  );
   await expect(page.getByText('Valid specification')).toBeVisible();
-  await page.locator('.spec-view textarea').fill(`document:
+  await setSpecText(
+    page,
+    `document:
   dsl: "1.0.3"
   namespace: default
   name: unsupported-example
   version: "0.1.0"
 do:
   - badTask:
-      imaginary: true`);
+      imaginary: true`,
+  );
   await expect(page.getByText('Unsupported task or structure', { exact: true })).toBeVisible();
-  await page.locator('.spec-view textarea').fill(`document:
+  await setSpecText(
+    page,
+    `document:
   dsl: "1.0.3"
   namespace: default
   name: customer-onboarding
   version: "0.1.0"
-do: []`);
+do: []`,
+  );
   await expect(page.getByText('Valid specification')).toBeVisible();
   await page.getByRole('button', { name: 'Canvas' }).click();
   await page.getByRole('button', { name: 'Duplicate' }).click();
   await expect(page.getByLabel('Workflow name')).toHaveValue('customer-onboarding-copy');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(
     page
-      .locator('select[aria-label="Dubai Government workflow examples"] option')
-      .filter({ hasText: 'customer-onboarding-copy' }),
+      .getByRole('listbox', { name: 'Saved workflows' })
+      .locator('.library-item', { hasText: 'customer-onboarding-copy' }),
   ).toHaveCount(1);
   page.once('dialog', (dialog) => dialog.accept());
   await page.getByRole('button', { name: 'Delete' }).click();
   await expect(page.getByLabel('Workflow name')).toHaveValue('dewa-move-to');
 });
 
-test('switches between Dubai Government service cases', async ({ page }) => {
-  const picker = page.getByLabel('Dubai Government workflow examples');
-  await expect(picker.locator('option')).toHaveCount(4);
+test('switches between saved workflows from the library explorer', async ({ page }) => {
+  const library = page.getByRole('listbox', { name: 'Saved workflows' });
+  await expect(library.locator('.library-item')).toHaveCount(4);
 
-  await picker.selectOption('rta-vehicle-ownership-renewal');
+  await library.locator('.library-item', { hasText: 'rta-vehicle-ownership-renewal' }).click();
   await expect(page.getByLabel('Workflow name')).toHaveValue('rta-vehicle-ownership-renewal');
   await expect(page.getByRole('group', { name: 'call task renewVehicleOwnership' })).toBeVisible();
 
-  await picker.selectOption('rta-nol-travel-pass-renewal');
+  await library.locator('.library-item', { hasText: 'rta-nol-travel-pass-renewal' }).click();
   await expect(page.getByLabel('Workflow name')).toHaveValue('rta-nol-travel-pass-renewal');
   await expect(page.getByRole('group', { name: 'set task checkTravelPassExpiry' })).toBeVisible();
 
-  await picker.selectOption('dewa-move-to');
+  await library.locator('.library-item', { hasText: 'dewa-move-to' }).click();
   await expect(page.getByLabel('Workflow name')).toHaveValue('dewa-move-to');
   await expect(page.getByRole('group', { name: 'listen task listenForEjariEvent' })).toBeVisible();
+});
+
+test('supports dedicated task inspectors for for, fork, listen, and try tasks', async ({ page }) => {
+  // for task
+  await page.getByRole('button', { name: 'Add For each task' }).press('Enter');
+  await expect(page.getByRole('group', { name: 'for task forTask' })).toBeVisible();
+  const loopItem = page.getByLabel('Loop item variable');
+  await loopItem.fill('citizen');
+  await loopItem.blur();
+  const loopIn = page.getByLabel('Collection expression');
+  await loopIn.fill('${ $context.citizens }');
+  await loopIn.blur();
+  await page.getByRole('button', { name: 'Specification' }).click();
+  await expectSpecToContain(page, 'each: citizen');
+  await expectSpecToContain(page, 'in: ${ $context.citizens }');
+
+  // fork task
+  await page.getByRole('button', { name: 'Canvas' }).click();
+  await page.getByRole('button', { name: 'Add Fork task' }).press('Enter');
+  await expect(page.getByRole('group', { name: 'fork task forkTask' })).toBeVisible();
+  await page.getByRole('button', { name: '＋ Add branch' }).click();
+  await expect(page.getByText('2 configured')).toBeVisible();
+  await page.getByLabel('Competitive fork').check();
+  await page.getByRole('button', { name: 'Specification' }).click();
+  await expectSpecToContain(page, 'compete: true');
+
+  // listen task
+  await page.getByRole('button', { name: 'Canvas' }).click();
+  await page.getByRole('button', { name: 'Add Listen task' }).press('Enter');
+  await expect(page.getByRole('group', { name: 'listen task listenTask' })).toBeVisible();
+  await page.getByLabel('Event type').fill('com.dubai.smart.service.started');
+  await page.getByLabel('Event type').blur();
+  await page.getByRole('button', { name: 'Specification' }).click();
+  await expectSpecToContain(page, 'type: com.dubai.smart.service.started');
+
+  // try task
+  await page.getByRole('button', { name: 'Canvas' }).click();
+  await page.getByRole('button', { name: 'Add Try / catch task' }).press('Enter');
+  await expect(page.getByRole('group', { name: 'try task tryTask' })).toBeVisible();
+  await page.getByLabel('Catch error type').fill('https://demo.dubai.ae/errors/unavailable');
+  await page.getByLabel('Catch error type').blur();
+  await page.getByLabel('Max attempts').fill('5');
+  await page.getByLabel('Max attempts').blur();
+  await page.getByRole('button', { name: 'Specification' }).click();
+  await expectSpecToContain(page, 'type: https://demo.dubai.ae/errors/unavailable');
+  await expectSpecToContain(page, 'count: 5');
 });
 
 test('supports keyboard undo and redo for a canvas edit', async ({ page }) => {
@@ -232,4 +317,195 @@ test('supports keyboard undo and redo for a canvas edit', async ({ page }) => {
   await expect(task).toHaveCount(0);
   await page.keyboard.press('Meta+Shift+z');
   await expect(task).toBeVisible();
+});
+
+test('supports theme switching between light, dark, and high-contrast modes', async ({ page }) => {
+  const themeSelect = page.getByLabel('Editor visual theme');
+  await expect(themeSelect).toBeVisible();
+
+  await themeSelect.selectOption('dark');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+
+  await themeSelect.selectOption('high-contrast');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'high-contrast');
+
+  await themeSelect.selectOption('light');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+});
+
+test('opens and dismisses keyboard shortcuts dialog', async ({ page }) => {
+  const shortcutsButton = page.getByLabel('Keyboard shortcuts reference');
+  await shortcutsButton.click();
+  await expect(page.getByRole('dialog', { name: 'Keyboard Shortcuts' })).toBeVisible();
+  await expect(page.getByText('Fit entire workflow to view')).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: 'Keyboard Shortcuts' })).toHaveCount(0);
+});
+
+test('browses template library and loads a workflow pattern', async ({ page }) => {
+  await page.getByLabel('Open template library').click();
+  const dialog = page.getByRole('dialog', { name: 'Workflow Template Catalog' });
+  await expect(dialog).toBeVisible();
+  await expect(page.getByText('Resilient Retry & Error Recovery')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Resilience' }).click();
+  await page.getByText('Resilient Retry & Error Recovery').click();
+  await page.getByRole('button', { name: 'Use template' }).click();
+
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('.workflow-name-input')).toHaveValue(/resilient-try-catch-retry/);
+  await expect(page.getByRole('group', { name: 'try task processWithRetry' })).toBeVisible();
+});
+
+test('opens revision history dialog and inspects workflow diff', async ({ page }) => {
+  await page.getByLabel('Workflow revision history').click();
+  const dialog = page.getByRole('dialog', { name: 'Workflow Revision History & Diff' });
+  await expect(dialog).toBeVisible();
+  await expect(page.getByText(/Revisions/)).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+});
+
+test('supports multi-document tabs bar and tab switching', async ({ page }) => {
+  await expect(page.getByRole('tablist', { name: 'Open workflow documents' })).toBeVisible();
+  const initialTabs = page.locator('.document-tab');
+  await expect(initialTabs).toHaveCount(1);
+
+  await page.getByLabel('New workflow tab').click();
+  await expect(page.locator('.document-tab')).toHaveCount(2);
+
+  const tabs = page.locator('.document-tab');
+  await tabs.first().click();
+  await expect(tabs.first()).toHaveClass(/active/);
+});
+
+test('scaffolds and opens subflow documents from inspector', async ({ page }) => {
+  await page.getByRole('button', { name: 'Add Run JavaScript task' }).press('Enter');
+  await page.getByLabel('Run mode').selectOption('subflow');
+  await page.getByLabel('Sub-flow name', { exact: true }).fill('billing-process');
+  await page.getByLabel('Sub-flow name', { exact: true }).blur();
+  await page.getByRole('button', { name: /Scaffold.*billing-process/i }).click();
+
+  await expect(page.locator('.workflow-name-input')).toHaveValue('billing-process');
+  await expect(page.locator('.document-tab')).toHaveCount(2);
+});
+
+test('opens and views production deployment bundle dialog', async ({ page }) => {
+  await page.getByRole('button', { name: 'Deploy bundle' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Workflow Deployment Bundle' });
+  await expect(dialog).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Dockerfile', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'deployment.yaml', exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Dockerfile', exact: true }).click();
+  await expect(page.locator('pre')).toContainText('openworkflow/runtime:1.0.3');
+
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+});
+
+test('configures custom gateway URL and bearer auth token in runtime panel', async ({ page }) => {
+  await page.getByRole('tab', { name: 'Runtime gateway' }).click();
+  await page.getByRole('button', { name: /Gateway settings/i }).click();
+
+  await expect(page.getByLabel('Gateway Base URL')).toBeVisible();
+  await page.getByLabel('Gateway Base URL').fill('http://127.0.0.1:8091');
+  await page.getByLabel('Gateway Bearer Token').fill('prod-token-xyz');
+
+  await page.getByRole('button', { name: 'Test ping' }).click();
+  await expect(page.locator('.gateway-status-banner')).toContainText('http://127.0.0.1:8091');
+});
+
+test('preserves unsaved template tabs and names across tab switches', async ({ page }) => {
+  // 1. Open template 1
+  await page.getByLabel('Open template library').click();
+  await page.getByRole('button', { name: 'Resilience' }).click();
+  await page.getByText('Resilient Retry & Error Recovery').click();
+  await page.getByRole('button', { name: 'Use template' }).click();
+
+  // 2. Open template 2
+  await page.getByLabel('Open template library').click();
+  await page.getByRole('button', { name: 'Integration' }).click();
+  await page.getByText('API Webhook & Decision Router').click();
+  await page.getByRole('button', { name: 'Use template' }).click();
+
+  await expect(page.locator('.document-tab')).toHaveCount(3);
+
+  // 3. Switch back to first template tab
+  const tabs = page.locator('.document-tab');
+  await tabs.nth(1).click();
+  await expect(tabs.nth(1)).toHaveClass(/active/);
+  await expect(page.locator('.workflow-name-input')).toHaveValue(/resilient-try-catch-retry/);
+
+  // 4. Switch to second template tab
+  await tabs.nth(2).click();
+  await expect(tabs.nth(2)).toHaveClass(/active/);
+  await expect(page.locator('.workflow-name-input')).toHaveValue(/api-webhook-router/);
+});
+
+test('renders correct icon and subtitle for try-catch container node', async ({ page }) => {
+  await page.getByLabel('Open template library').click();
+  await page.getByRole('button', { name: 'Resilience' }).click();
+  await page.getByText('Resilient Retry & Error Recovery').click();
+  await page.getByRole('button', { name: 'Use template' }).click();
+
+  const tryNode = page.locator('.workflow-node.indigo').first();
+  await expect(tryNode).toBeVisible();
+  await expect(tryNode.locator('.node-icon')).toContainText('⊙');
+  await expect(tryNode.locator('.node-content span').first()).toContainText('Try / catch');
+});
+
+test('supports use.functions reusable functions and call task function mode', async ({ page }) => {
+  await page.getByLabel('Open template library').click();
+  await page.getByRole('button', { name: 'Automation' }).click();
+  await page.getByText('Reusable Functions & Common Notifier').click();
+  await page.getByRole('button', { name: 'Use template' }).click();
+
+  // Verify node subtitle shows fn: calculateTax, purple styling, and function icon ƒ
+  const fnNode = page.locator('.workflow-node.purple', { hasText: 'applyTaxFunction' });
+  await expect(fnNode).toBeVisible();
+  await expect(fnNode.locator('.node-icon')).toContainText('ƒ');
+  await expect(fnNode.locator('.node-content span').first()).toContainText('fn: calculateTax');
+
+  // Click on the applyTaxFunction node
+  await page.getByRole('group', { name: 'call task applyTaxFunction' }).click();
+
+  // Verify call mode toggle is set to Reusable Function
+  const functionModeButton = page.getByRole('button', { name: 'Reusable Function' });
+  await expect(functionModeButton).toHaveClass(/active/);
+
+  // Verify function argument editor is visible
+  await expect(page.locator('.function-call-section')).toBeVisible();
+});
+
+test('renders document settings and resources in inspector when no task is selected', async ({ page }) => {
+  // Click on canvas background or unselect any task
+  await expect(page.getByRole('heading', { name: 'Workflow Settings' })).toBeVisible();
+  await expect(page.getByLabel('Workflow doc name', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Workflow doc namespace', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Workflow doc version', { exact: true })).toBeVisible();
+
+  // Reusable functions and catalogs are available at document level
+  await expect(page.getByLabel('Document Reusable Functions')).toBeVisible();
+  await expect(page.getByLabel('Document Resource Catalogs')).toBeVisible();
+});
+
+test('supports symmetrical panel collapse and flex-grow in the right rail', async ({ page }) => {
+  const collapseRuntimeButton = page.getByRole('button', { name: 'Collapse Runtime' });
+  await collapseRuntimeButton.click();
+
+  // Verify runtime is collapsed to 54px and inspector is expanded
+  const runtimePanel = page.locator('.side-runtime-panel');
+  await expect(runtimePanel).toHaveClass(/runtime-panel-collapsed/);
+
+  const inspector = page.locator('.inspector');
+  const box = await inspector.boundingBox();
+  expect(box?.height).toBeGreaterThan(400);
+
+  // Restore runtime
+  const expandRuntimeButton = page.getByRole('button', { name: 'Expand Runtime' });
+  await expandRuntimeButton.click();
+  await expect(runtimePanel).not.toHaveClass(/runtime-panel-collapsed/);
 });

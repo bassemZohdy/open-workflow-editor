@@ -1,60 +1,92 @@
 # Open Workflow Editor
 
-Local browser-based authoring UI for the [Open Workflow Specification](https://github.com/open-workflow-specification/specification). The editor uses `@openworkflowspec/sdk` for schema validation and semantic graph data, `@xyflow/react` for the editable canvas, and ELK.js for auto-layout.
+A production-grade browser-based visual authoring and simulation environment for the [Open Workflow Specification (1.0.3)](https://github.com/open-workflow-specification/specification). The editor uses `@openworkflowspec/sdk` for AST parsing, schema validation, and semantic graph generation, `@xyflow/react` for interactive canvas editing, and ELK.js for deterministic hierarchical layout.
 
-This project is an authoring tool with an optional local demo engine. The demo engine simulates workflow
-progress in the browser; it does not execute production workflows, resolve credentials, or call upstream
-endpoints. JavaScript tasks use the local Node sandbox boundary during development. Production execution
-remains a separate server-side runtime gateway integration.
+---
+
+## Core Capabilities
+
+- **Visual Canvas Authoring:** Interactive drag-and-drop workflow canvas with 12 complete task types (`set`, `call`, `switch`, `do`, `for`, `fork`, `emit`, `listen`, `raise`, `run`, `try`, `wait`), auto-layout with ELK.js, node alignment tools, search/filter, and high-resolution SVG/PNG diagram export.
+- **Hierarchical Container Sub-Graph Visualization:** Container nodes (`do`, `for`, `fork`, `try`/`catch`, `switch`) render nested task pills, branch targets, and normalized container icons.
+- **Reusable Functions & Function Invocations:** Document-level `use.functions` manager, dual-mode `call` task inspector (`HTTP Request` vs `Reusable Function`), graph validation against undefined function targets, and distinctive canvas subtitle indicators (`fn: <functionName>`).
+- **Multi-Document Tabs & Local File System Sync:** Horizontal document tabs with dirty state indicators, "+ New tab", in-memory tab state preservation across tab switches, and native Web File System Access API integration (`showOpenFilePicker` / `showSaveFilePicker`).
+- **Deep Property Inspectors:** Dedicated inspectors for all 12 task primitives, multi-key `JsonObjectBuilder` for `set` tasks, typed JSON builder, and dynamic expression autocomplete (`${ ... }`).
+- **Subflow Visual Cross-Referencing & Scaffolding:** 1-click tab switching and scaffolding for `run.workflow` subflows directly from property inspectors.
+- **Production Runtime Gateway & Live Telemetry:** Connects to remote execution daemons via authenticated REST and Server-Sent Events (SSE) stream (`GET /runs/:id/events`). Includes live health card with latency ping (ms), uptime, active runs, Bearer token authorization, in-memory sliding window rate limiting, and audit logging (`GET /audit`).
+- **Open Workflow Java SDK (7.x) Integration:** Reference daemon bridge (`server/javaSdkBridge.js`) and Spring Boot integration guide ([`docs/java-sdk-gateway.md`](docs/java-sdk-gateway.md)).
+- **Standalone Deployment Bundle Generator:** 1-click generation, preview, copy, and download of container `Dockerfile`, Kubernetes manifest (`deployment.yaml` with ConfigMap, Deployment, Service), `workflow.yaml`, and `README.md`.
+- **Real-Time Runtime Log Explorer:** Real-time search filter, severity pills (`All`, `Info`, `Warn`, `Error` with live count badges), auto-scroll, and 1-click clipboard export.
+- **Revision History & Visual Diffing:** Full snapshot revision history with Myers LCS line-by-line diffing and 1-click restore.
+- **Template Library & Themes:** Categorized patterns catalog, keyboard shortcuts dialog (`?`/`F1`), and multi-theme system (`Light`, `Dark`, `High-Contrast`).
+- **VS Code–Parity IDE Ergonomics:** CodeMirror 6 code editor for the Specification view (syntax highlighting, line numbers, code folding, find-in-editor, inline diagnostics with click-to-jump), fuzzy command palette (`Ctrl/Cmd+Shift+P`), Quick Open for tabs & saved workflows (`Ctrl/Cmd+P`), workspace-wide task search (`Ctrl/Cmd+Shift+F`), aggregated Problems panel with click-to-navigate (`Ctrl/Cmd+Shift+M`), drag-resizable side rails (persisted widths), right-click context menus on canvas nodes, pane and document tabs, a live status bar (selection, problems count, cursor Ln/Col, runtime connectivity), and global shortcuts that work in every view (`Ctrl+S`, `Ctrl+Z`, `Ctrl+O`…).
+- **Workflow Library Explorer:** VS Code Explorer–style saved-workflows list in the left rail — click to switch, inline rename, delete, and dirty indicators for unsaved tabs.
+- **Settings, Breadcrumbs & Canvas Controls:** Settings dialog (`Ctrl/Cmd+,`) centralizing theme, panel visibility, mini-map, and gateway URL/token; live breadcrumbs (`workflow / do / <task>`); drag-to-reorder tab bar; zoom controls (`Ctrl/Cmd+= / - / 0`) with per-workflow viewport persistence.
+
+Full IDE-parity reference (surfaces, shortcuts, persistence keys): [`docs/ide-parity.md`](docs/ide-parity.md).
+
+---
 
 ## Development
 
 ```bash
+# Install dependencies
 npm install
+
+# Start Vite dev server & JavaScript Sandbox API
 npm run dev
 ```
 
-Open the local Vite URL shown in the terminal. The primary workflow is:
+Open the local Vite URL (`http://localhost:5173` or `http://127.0.0.1:4174`).
 
-1. Drag tasks from the palette onto the canvas.
-2. Move nodes, connect handles, select a task, and edit its inspector fields.
-3. Use the Specification tab for YAML or JSON editing with live validation.
-4. Save locally, or import/export a workflow file.
-
-The Vite development server exposes the Node sandbox at `POST /api/sandbox/javascript`. To run the same
-boundary as a standalone local service, use `npm run runtime:sandbox` (listens on `127.0.0.1:8091`).
-
-The Inspector exposes shared options for every task: conditions, next-task routing, ISO duration controls for waits and timeouts, typed input/output/export mappings, and metadata. Task-specific editors add the fields that belong to that task; HTTP calls include method, endpoint, headers, query parameters, and a key/value JSON builder with text, number, boolean, date, date-time, time, expression, and nested JSON types. Advanced task JSON remains available for less common schema fields.
-
-Workflow validation is an editor command in the top bar; it checks the definition without executing it. Runtime is reserved for execution: **Start run** executes it in the selected engine, while **Cancel run** and **Refresh status** appear only after a run has started. Inspector and Runtime collapse independently as vertical right-side panels, matching the task palette behavior. Next-task routing uses the current workflow’s available task list, and HTTP request parameters are grouped in a collapsible section with name/value fields for headers and query parameters.
-
-The workflow picker contains four focused Dubai Government service cases: RTA nol Travel Pass renewal, RTA vehicle ownership renewal, RTA personal and family nol card renewal, and DEWA Move-To. Each stays intentionally short while showing the trigger, identity/payment step, service transition, and notification. Every example links to its official service reference. In Demo mode, use **Demo pace** to choose Fast, Steady, or Slow task progression. The Runtime panel shows the active task, task durations, branch choices, mocked service calls, trigger type, and a structured execution log with expandable entries.
-
-Saved workflows can be selected from the workflow picker, renamed inline, duplicated, or deleted. Switching workflows and destructive lifecycle actions ask before discarding unsaved changes.
-
-For a `switch` task, select the node to open its case editor. Add cases with `＋ Add case` or drag `Drag “New case” here` into the drop zone, then edit each condition and flow target.
-
-The editor shows explicit hydration/import progress, empty-canvas guidance, parse/validation errors, and unsupported-task feedback while keeping the last editable specification draft visible.
-
-`Run JavaScript` tasks use the Open Workflow `run.script` shape and require a function such as `({ input, context, catalogs }) => output`. The editor validates the function syntax, exposes workflow `use.catalogs` resource references, and merges object output into context for the next task. The same Run task can target a schema-valid `run.workflow` sub-flow. In the Vite development server, JavaScript is sent to the Node sandbox endpoint with strict limits. Deployments must keep this boundary isolated before accepting untrusted workflow authors.
-
-Useful shortcuts are `⌘/Ctrl+Z` undo, `Shift+⌘/Ctrl+Z` redo, `⌘/Ctrl+S` save, `⌘/Ctrl+D` duplicate the selected task, and `F` fit the canvas.
-
-## Verification commands
+The Vite development server exposes the Node sandbox at `POST /api/sandbox/javascript`. To run the standalone gateway service:
 
 ```bash
-npm test
-npm run test:browser
-npm run build
-npm run typecheck
-npm run lint
-npm run format:check
+npm run runtime:sandbox
+# Listens on 127.0.0.1:8091 with /health, /validate, /runs, /runs/:id/events, /audit
 ```
 
-The adapter tests cover YAML/JSON round-trips, all supported task templates, graph projection, layout, task mutations, graph diagnostics, lifecycle storage, and nested field edits. Playwright covers palette keyboard creation, property/spec synchronization, drag/drop, invalid-specification feedback, and workflow duplication.
+---
 
-## Persistence
+## Production Deployment Bundle
 
-Saved workflow text is kept in browser local storage with a versioned envelope. Canvas positions are stored separately so layout changes do not modify the Open Workflow document. The old unversioned text format is read as a migration fallback.
+Click **Deploy bundle** in the workspace toolbar to generate:
 
-The runtime and persistence integration boundary is documented in [`docs/runtime-boundary.md`](docs/runtime-boundary.md). The selected execution target and compatibility gate are recorded in [`docs/runtime-decision.md`](docs/runtime-decision.md), and the pre-execution security review is in [`docs/security-review.md`](docs/security-review.md). Runtime credentials belong to the server-only environment contract in `server/runtimeGatewayConfig.js`; never expose them through a `VITE_` variable. The Runtime panel defaults to the local demo engine and can switch to the gateway when `VITE_RUNTIME_GATEWAY_URL` is configured.
+1. `Dockerfile` based on `openworkflow/runtime:1.0.3`.
+2. `deployment.yaml` (Kubernetes `ConfigMap`, `Deployment` with probes, and `Service`).
+3. `workflow.yaml` with valid Open Workflow Specification syntax.
+4. `README.md` with Docker and `kubectl apply` commands.
+
+---
+
+## Verification Commands
+
+```bash
+# Run Vitest unit tests (56 tests)
+npm test
+
+# Run Playwright E2E browser tests (50 tests)
+npm run test:browser
+
+# Type-check TypeScript
+npm run typecheck
+
+# Lint ESLint rules
+npm run lint
+
+# Check code formatting with Prettier
+npm run format:check
+
+# Production build
+npm run build
+```
+
+---
+
+## Documentation Index
+
+- [`DESIGN.md`](DESIGN.md): Design tokens, typography, layout grid, elevation, and component specs.
+- [`docs/ide-parity.md`](docs/ide-parity.md): VS Code–parity surfaces, keyboard shortcuts, and persistence keys.
+- [`docs/java-sdk-gateway.md`](docs/java-sdk-gateway.md): Spring Boot & Java SDK 7.x daemon bridge setup guide.
+- [`docs/runtime-boundary.md`](docs/runtime-boundary.md): Runtime adapter contract, simulation vs. gateway boundary.
+- [`docs/runtime-decision.md`](docs/runtime-decision.md): Target runtime selection decision and compatibility matrix.
+- [`docs/security-review.md`](docs/security-review.md): Security review covering secrets, sandbox isolation, rate limiting, and auth.

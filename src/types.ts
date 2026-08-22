@@ -1,16 +1,31 @@
 /**
  * Shared editor-side model types.
  *
- * Stage 1 of the TypeScript migration (Phase 10.2): these are pragmatic
- * structural types for the editor state model. The canonical Open Workflow
- * AST types are provided by `@openworkflowspec/sdk`; the loose
- * `WorkflowDocument` alias below will be tightened when `workflowModel`
- * itself migrates to TypeScript.
+ * Comprehensive TypeScript interfaces for Open Workflow AST, graph models,
+ * and editor store state.
  */
 
-/** The twelve Open Workflow Specification task types the editor supports. */
+/**
+ * Open Workflow Specification task types the editor supports, plus the
+ * prototype AI task families (`llm-call`, `ai-agent-call`) that will be
+ * implemented once the DSL/schema support lands; they appear in the palette
+ * as "coming soon" entries.
+ */
 export type TaskType =
-  'set' | 'call' | 'switch' | 'do' | 'for' | 'fork' | 'emit' | 'listen' | 'raise' | 'run' | 'try' | 'wait';
+  | 'set'
+  | 'call'
+  | 'switch'
+  | 'do'
+  | 'for'
+  | 'fork'
+  | 'emit'
+  | 'listen'
+  | 'raise'
+  | 'run'
+  | 'try'
+  | 'wait'
+  | 'llm-call'
+  | 'ai-agent-call';
 
 /** Accent color tokens used by palette items and canvas nodes. */
 export type TaskColor =
@@ -25,12 +40,13 @@ export type TaskColor =
   | 'red'
   | 'slate'
   | 'indigo'
-  | 'purple';
+  | 'purple'
+  | 'magenta';
 
 /**
  * A single task definition inside a `do` list entry. The editor reads and
- * mutates these structures dynamically, so the known task keys are declared
- * with loose structural shapes plus a catch-all index signature.
+ * mutates these structures dynamically, so known task keys are declared
+ * with structural shapes plus a catch-all index signature.
  */
 export interface TaskDefinition {
   set?: Record<string, unknown>;
@@ -38,10 +54,21 @@ export interface TaskDefinition {
   with?: Record<string, unknown>;
   switch?: Array<Record<string, { when?: unknown; then?: string }>>;
   do?: TaskItem[];
-  for?: { each?: string; in?: unknown };
-  fork?: { branches?: TaskItem[] };
+  for?: { each?: string; in?: unknown; at?: string; [key: string]: unknown };
+  fork?: { branches?: TaskItem[]; compete?: boolean; [key: string]: unknown };
   try?: TaskItem[];
-  catch?: { do?: TaskItem[] };
+  catch?: {
+    errors?: { with?: { type?: string } } | string[];
+    retry?: {
+      delay?: string;
+      limit?: { attempt?: { count?: number } };
+      max?: number;
+      backoff?: unknown;
+      [key: string]: unknown;
+    };
+    do?: TaskItem[];
+    [key: string]: unknown;
+  };
   raise?: { error?: { type?: string; [key: string]: unknown } };
   wait?: string;
   emit?: { event?: { with?: Record<string, unknown> } };
@@ -50,12 +77,24 @@ export interface TaskDefinition {
       one?: { with?: EventFilter };
       any?: Array<{ with?: EventFilter }>;
     };
+    read?: string;
+    [key: string]: unknown;
   };
   run?: {
-    script?: { language?: string; code?: string };
+    script?: { language?: string; code?: string; [key: string]: unknown };
     workflow?: { namespace?: string; name?: string; version?: string };
+    [key: string]: unknown;
   };
+  if?: string;
   then?: string;
+  input?: Record<string, unknown>;
+  output?: Record<string, unknown>;
+  export?: Record<string, unknown>;
+  timeout?: string;
+  metadata?: Record<string, unknown>;
+  /** Prototype AI task families (planning stage; defined once the DSL/schema supports them). */
+  'llm-call'?: Record<string, unknown>;
+  'ai-agent-call'?: Record<string, unknown>;
   [key: string]: unknown;
 }
 
@@ -71,13 +110,16 @@ export interface EventFilter {
 
 /**
  * A parsed workflow specification document. Structurally the SDK's
- * normalized document (`document`, `do`, `use`, …), kept loose until the
- * parser module is fully typed.
+ * normalized document (`document`, `do`, `use`, …).
  */
 export interface WorkflowDocument {
-  document?: { name?: string; [key: string]: unknown };
+  document?: { name?: string; namespace?: string; version?: string; [key: string]: unknown };
   do?: TaskItem[];
-  use?: { catalogs?: Record<string, unknown>; [key: string]: unknown };
+  use?: {
+    catalogs?: Record<string, unknown>;
+    functions?: Record<string, TaskDefinition>;
+    [key: string]: unknown;
+  };
   schedule?: { every?: string; cron?: string; after?: string; [key: string]: unknown };
   [key: string]: unknown;
 }
@@ -107,16 +149,22 @@ export interface FlowNodeData {
   taskReference?: string;
   task?: unknown;
   portType?: string;
+  isHighlighted?: boolean;
+  isDimmed?: boolean;
+  executionStatus?: 'running' | 'success' | 'failed' | 'waiting';
+  [key: string]: unknown;
 }
 
 /** A React Flow projection node (task or port). */
 export interface FlowNode {
   id: string;
-  type: 'task' | 'port';
+  type?: 'task' | 'port' | string;
   position: CanvasPosition;
   data: FlowNodeData;
-  draggable: boolean;
-  selectable: boolean;
+  draggable?: boolean;
+  selectable?: boolean;
+  selected?: boolean;
+  [key: string]: unknown;
 }
 
 /** A React Flow projection edge. */
@@ -126,7 +174,7 @@ export interface FlowEdge {
   target: string;
   type: 'smoothstep';
   label?: string;
-  data: { label: string };
+  data?: { label: string };
   animated: boolean;
 }
 
@@ -142,6 +190,15 @@ export interface GraphIssue {
   message: string;
 }
 
+/** A saved revision snapshot of a workflow specification. */
+export interface WorkflowRevision {
+  id: string;
+  timestamp: number;
+  specification: string;
+  format: WorkflowFormat;
+  summary?: string;
+}
+
 /** A workflow entry in the multi-workflow library. */
 export interface WorkflowRecord {
   id: string;
@@ -150,6 +207,7 @@ export interface WorkflowRecord {
   format: WorkflowFormat;
   positions: CanvasPositions;
   updatedAt: number;
+  revisions?: WorkflowRevision[];
 }
 
 /** Persistence envelope header for the workflow library. */
@@ -179,3 +237,6 @@ export interface WorkflowPersistence {
   replace(workflows: WorkflowRecord[]): void | Promise<void>;
   clear(): void;
 }
+
+/** Application visual theme mode. */
+export type AppTheme = 'light' | 'dark' | 'high-contrast';

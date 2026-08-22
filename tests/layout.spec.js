@@ -19,7 +19,7 @@ test('keeps desktop actions inside the workspace and preserves panel layouts', a
   await page.screenshot({ path: '/tmp/open-workflow-editor-inspector.png', fullPage: true });
 
   await page.getByRole('button', { name: 'Specification' }).click();
-  await expect(page.locator('.spec-view textarea')).toBeVisible();
+  await expect(page.locator('.spec-editor .cm-editor')).toBeVisible();
   await page.screenshot({ path: '/tmp/open-workflow-editor-specification.png', fullPage: true });
 });
 
@@ -34,7 +34,10 @@ test('keeps the graph usable on a narrow viewport', async ({ page }) => {
 
 test('fits branched graphs after auto layout', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.getByLabel('Dubai Government workflow examples').selectOption('rta-vehicle-ownership-renewal');
+  await page
+    .getByRole('listbox', { name: 'Saved workflows' })
+    .locator('.library-item', { hasText: 'rta-vehicle-ownership-renewal' })
+    .click();
   await page.getByRole('button', { name: 'Auto layout' }).click();
   await expect(page.getByRole('button', { name: 'Unlock layout' })).toBeVisible({ timeout: 8000 });
 

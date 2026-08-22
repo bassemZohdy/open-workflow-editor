@@ -1,25 +1,35 @@
 import { createServer } from 'node:http';
 import { createSandboxRequestHandler } from './javascriptSandbox.js';
+import { createRuntimeGatewayHandler } from './runtimeGatewayHandler.js';
 
 export function startSandboxServer({ host = '127.0.0.1', port = 8091 } = {}) {
-  const handler = createSandboxRequestHandler();
+  const sandboxHandler = createSandboxRequestHandler();
+  const gatewayHandler = createRuntimeGatewayHandler();
+
   const server = createServer((request, response) => {
-    response.setHeader('access-control-allow-origin', 'http://127.0.0.1:5176');
-    response.setHeader('access-control-allow-headers', 'content-type');
+    response.setHeader('access-control-allow-origin', '*');
+    response.setHeader('access-control-allow-methods', 'GET, POST, DELETE, OPTIONS');
+    response.setHeader('access-control-allow-headers', 'content-type, authorization, accept');
+
     if (request.method === 'OPTIONS') {
       response.statusCode = 204;
       response.end();
       return;
     }
-    void handler(request, response).then((handled) => {
-      if (!handled && !response.writableEnded) {
-        response.statusCode = 404;
-        response.end('Not found');
-      }
-    });
+
+    void Promise.all([sandboxHandler(request, response), gatewayHandler(request, response)]).then(
+      ([sandboxHandled, gatewayHandled]) => {
+        if (!sandboxHandled && !gatewayHandled && !response.writableEnded) {
+          response.statusCode = 404;
+          response.setHeader('content-type', 'application/json');
+          response.end(JSON.stringify({ error: 'Endpoint not found' }));
+        }
+      },
+    );
   });
+
   server.listen(port, host, () => {
-    process.stdout.write(`Open Workflow Node sandbox listening on http://${host}:${port}\n`);
+    process.stdout.write(`Open Workflow server (Sandbox & Gateway) listening on http://${host}:${port}\n`);
   });
   return server;
 }
