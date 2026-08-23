@@ -32,6 +32,7 @@ Build a real, production-ready "VS Code for Open Workflow Specifications": a bro
 | 50  | README AI orchestration paragraph + memo dep polish                 | `[x]`  | DONE: README covers demo execution, diagnostics, bundle artifacts; `workspaceDocuments` memo deps cleaned. Docs + 1-line code change (verified by full suite).                                                                                                                                           |
 | 51  | AI palette add reuses an existing sub-flow tab                      | `[x]`  | DONE: post-commit scaffold routes through `handleOpenSubflow` (existing tab → switch, saved → open, else scaffold once); E2E adds the task twice and asserts no duplicate tabs.                                                                                                                          |
 | 52  | Sub-flow open/scaffold matching is namespace-aware                  | `[x]`  | DONE: `handleOpenSubflow` matches tabs/library entries by `namespace`+`name` (name-only fallback for legacy docs); same-named sub-flows in other namespaces scaffold as distinct tabs; 1 E2E.                                                                                                            |
+| 53  | AI provider bridge unit tests (mock fetch)                          | `[x]`  | DONE: 5 tests — config-error, Bearer auth/URL, contract mapping (chat + agent), validation (required/unknown/64 KiB), provider-failure mapping — with a stubbed fetch. 103 unit / 71 E2E.                                                                                                                |
 
 Task 16 was implemented via valid-DSL composition (sub-flow delegation + catalog-backed providers, per `docs/ai-tasks.md`) instead of waiting for native DSL keys; the native types remain a future option.
 
@@ -90,6 +91,7 @@ Live dev-server review (Task 33's demo-engine AI delegation fix, since committed
 - **Docs + hygiene (Task 50):** README's AI orchestration paragraph now covers the full lifecycle (demo execution of referenced sub-flow documents with contract-shaped mock fallback, Problems-panel diagnostics with one-click scaffold, bundle artifacts `subflows/<ns>/<name>.yaml`); the `workspaceDocuments` memo lost its stale `showDeploymentBundle` dependency (the gate was removed in Task 38).
 - **Gap closed (Task 51): repeated AI palette adds scaffolded duplicate sub-flow tabs.** The post-commit scaffold effect owned its own tab-creation logic, so adding `LLM call` twice produced two `prompt-llm` tabs. It now routes through `handleOpenSubflow` — an existing matching tab is switched to, a saved entry is opened, and only a completely missing sub-flow is scaffolded — while the parent still receives every added delegation task. The AI palette E2E adds the task twice and asserts the tab count stays 2 (with the sub-flow tab active).
 - **Collision found & fixed (Task 52): sub-flow open/scaffold matched by name only.** Two sub-flows named `billing-process` (`dubai-government` vs `payments`) collided — scaffolding/opening one switched to or opened the other's document. `handleOpenSubflow` now compares `namespace`+`name` whenever the caller supplies a namespace (name-only fallback only for legacy entries without a namespace), so distinct same-named sub-flows scaffold as separate tabs. E2E: scaffold `dubai-government/billing-process` then `payments/billing-process` → 3 tabs, the new active tab is the payments document.
+- **Coverage added (Task 53): the AI provider bridge had no direct tests.** `createAiProviderBridge` is the gateway's provider dependency, previously only covered indirectly through injected bridges. A mock-fetch suite (5 tests) now pins: key-required configuration error, Bearer auth + trailing-slash URL normalization, chat/agent contract mapping, payload validation (required fields, unknown fields, 64 KiB limit), and provider-failure mapping into `AI provider error (<status>)`.
 - **Regression found & fixed (Task 40): executing the canonical AI sub-flow produced `undefined` contract fields.** Task 38 made the demo engine execute matched workspace documents — and since a palette AI scaffold leaves `ai/prompt-llm` open as a tab, the canonical doc (script + `captureResult` mapping `$context.invokeLlm.completion`) got executed instead of mocked. But sandbox script results were merged flat into context and never stored under the task name, so `$context.invokeLlm.completion` resolved to `undefined` — the run still "completed" with a broken `llmResult`. Fix: `run.script` results are now the task output (`context.<task> = scriptResult`, same as `run.workflow`); the flat merge stays for back-compat. TDD pair (2 unit tests) failed before the fix, then green; 1 E2E drives the real palette scaffold → demo run → `Executing/Completed sub-flow ai/prompt-llm` with the sandbox stub.
 
 ---
@@ -97,7 +99,7 @@ Live dev-server review (Task 33's demo-engine AI delegation fix, since committed
 ## Verification Commands
 
 ```bash
-npm test             # Vitest unit tests (98)
+npm test             # Vitest unit tests (103)
 npm run test:browser # Playwright E2E tests (71, parallel workers)
 npm run typecheck    # tsc --noEmit
 npm run lint         # ESLint
@@ -110,7 +112,7 @@ npm run build        # Production build
 - [x] `npm run typecheck` — clean.
 - [x] `npm run lint` — clean.
 - [x] `npm run format:check` — clean.
-- [x] `npm test` — **98 unit tests pass** (13 in `src/ideParity.test.ts`, +4 breadcrumb +2 reorder, +4 Task 16 AI builders, +5 gateway AI endpoints, +4 demo AI delegation incl. template, +4 Task 34 `buildLibraryRows`, +6 Task 35/37 deployment bundle, +4 Task 38 sub-flow execution, +3 Task 39 sub-flow diagnostics, +2 Task 40 script parity, +3 Task 41 bundle structure).
+- [x] `npm test` — **103 unit tests pass** (13 in `src/ideParity.test.ts`, +4 breadcrumb +2 reorder, +4 Task 16 AI builders, +5 gateway AI endpoints, +4 demo AI delegation incl. template, +4 Task 34 `buildLibraryRows`, +6 Task 35/37 deployment bundle, +4 Task 38 sub-flow execution, +3 Task 39 sub-flow diagnostics, +2 Task 40 script parity, +3 Task 41 bundle structure, +5 Task 53 provider bridge).
 - [x] `npm run test:browser` — **71 Playwright E2E tests pass** (parallel workers; +1 Task 34 regression, +6 Task 35–40: AI bundle artifacts, rail icon strip, scaffolded user sub-flow bundle, demo sub-flow execution, unresolved sub-flow warning, canonical AI sub-flow demo run, +1 Task 52 namespace-aware scaffold).
 - [x] `npm run build` — production bundle builds.
 
@@ -163,6 +165,7 @@ npm run build        # Production build
 | 50  | README AI paragraph + memo dep hygiene               | README covers demo execution, diagnostics and bundle artifacts; `workspaceDocuments` deps cleaned (removed stale dialog gate)                                                                                                                                                                  |
 | 51  | AI palette add sub-flow tab dedupe                   | post-commit scaffold routes via `handleOpenSubflow` (switch/open/scaffold-once); E2E adds the task twice and asserts no duplicate tabs                                                                                                                                                         |
 | 52  | Sub-flow matching namespace-aware                    | `handleOpenSubflow` matches tabs/library entries by ns+name (name-only fallback); same-named sub-flows in other namespaces scaffold as distinct tabs (E2E)                                                                                                                                     |
+| 53  | AI provider bridge test coverage                     | 5 mock-fetch tests: config error, Bearer auth + URL, chat/agent contract mapping, validation (required/unknown/64 KiB), provider-failure mapping                                                                                                                                               |
 
 ### VS Code parity round 1 (Tasks 1–9)
 

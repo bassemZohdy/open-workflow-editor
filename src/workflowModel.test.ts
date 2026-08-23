@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as yaml from 'js-yaml';
 import { COMPLEX_WORKFLOW } from './fixtures/complexWorkflow';
 import {
@@ -14,6 +14,7 @@ import {
   runSandboxedJavaScript,
 } from '../server/javascriptSandbox';
 import { createRuntimeGatewayHandler } from '../server/runtimeGatewayHandler';
+import { createAiProviderBridge } from '../server/aiProviderBridge';
 import {
   buildLibraryRows,
   createWorkflowRecord,
@@ -1986,5 +1987,98 @@ do:
     expect(plainDeployment.spec.template.spec.containers[0].env.map((entry) => entry.name)).not.toContain(
       'WORKFLOW_SUBFLOW_PATH',
     );
+  });
+});
+
+describe('AI provider bridge (Task 53)', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  type BridgeUnderTest = ReturnType<typeof createAiProviderBridge> & {
+    chat: (payload: Record<string, unknown>) => Promise<{
+      completion: string;
+      model: string;
+      usage: unknown;
+    }>;
+    runAgent: (payload: Record<string, unknown>) => Promise<{ steps: unknown[]; outcome: string }>;
+  };
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const mockProviderResponse = (body: unknown, ok = true, status = 200) => {
+    fetchMock.mockResolvedValue({
+      ok,
+      status,
+      json: async () => body,
+      text: async () => (ok ? '' : 'upstream exploded'),
+    });
+  };
+
+  it('reports a configuration error without a provider key', () => {
+    const bridge = createAiProviderBridge({ requireKey: true });
+    const candidate = bridge as unknown as { configurationError?: Error };
+    expect(candidate.configurationError).toBeInstanceOf(Error);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('calls the provider with Bearer auth and maps chat completions', async () => {
+    mockProviderResponse({
+      choices: [{ message: { content: 'Hello there' } }],
+      model: 'gpt-test',
+      usage: { total_tokens: 42 },
+    });
+    const bridge = createAiProviderBridge({
+      apiKey: 'sk-test',
+      baseUrl: 'https://provider.test/v1/',
+    }) as BridgeUnderTest;
+    const result = await bridge.chat({
+      model: 'gpt-test',
+      messages: [{ role: 'user', content: 'hi' }],
+      temperature: 0.2,
+    });
+    expect(result.completion).toBe('Hello there');
+    expect(result.model).toBe('gpt-test');
+    expect(result.usage).toEqual({ total_tokens: 42 });
+    const [url, init] = fetchMock.mock.calls[0] as [string, { headers: Record<string, string> }];
+    expect(url).toBe('https://provider.test/v1/chat');
+    expect(init.headers.authorization).toBe('Bearer sk-test');
+    expect(init.headers['content-type']).toBe('application/json');
+  });
+
+  it('validates chat payloads: required, unknown and size limits', async () => {
+    const bridge = createAiProviderBridge({ apiKey: 'sk-test' }) as BridgeUnderTest;
+    await expect(bridge.chat({})).rejects.toThrow('Missing required field: messages');
+    await expect(bridge.chat({ messages: [], nope: 1 })).rejects.toThrow('Unexpected field: nope');
+    const oversize = { messages: [{ role: 'user', content: 'hi' }], maxTokens: 'z'.repeat(70 * 1024) };
+    await expect(bridge.chat(oversize)).rejects.toThrow('Request too large');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('maps provider failures into errors with the status', async () => {
+    mockProviderResponse({}, false, 502);
+    const bridge = createAiProviderBridge({ apiKey: 'sk-test' }) as BridgeUnderTest;
+    await expect(bridge.chat({ messages: [{ role: 'user', content: 'hi' }] })).rejects.toThrow(
+      'AI provider error (502)',
+    );
+  });
+
+  it('runs agents under the goal contract', async () => {
+    mockProviderResponse({ steps: [{ tool: 'search', status: 'ok' }], outcome: 'found it' });
+    const bridge = createAiProviderBridge({ apiKey: 'sk-test' }) as BridgeUnderTest;
+    const result = await bridge.runAgent({
+      agent: 'support-bot',
+      goal: 'Answer the ticket',
+      tools: ['search'],
+      context: {},
+      maxSteps: 5,
+    });
+    expect(result.steps).toEqual([{ tool: 'search', status: 'ok' }]);
+    expect(result.outcome).toBe('found it');
+    await expect(bridge.runAgent({ agent: 'support-bot' })).rejects.toThrow('Missing required field: goal');
   });
 });
