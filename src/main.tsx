@@ -49,6 +49,12 @@ import {
   buildLibraryRows,
 } from './workflowStore';
 import { formatError, formatGraphIssues, validationTitle, collectSpecDiagnostics } from './formatters';
+import {
+  collectWorkspaceDocuments,
+  createRequestIdSequence,
+  findMatchingSubflowTab,
+  subflowRecordMatchesTarget,
+} from './subflowWiring';
 import type { SpecDiagnostic } from './formatters';
 import { RuntimePanel } from './components/runtime';
 import {
@@ -383,6 +389,13 @@ function App() {
   const [aiScaffoldRequest, setAiScaffoldRequest] = useState<{ kind: AiTaskKind; requestId: number } | null>(
     null,
   );
+  // Task 65: `Date.now()` ids collide for same-millisecond adds, so the
+  // scaffold effect (keyed on requestId) dropped the second request. A
+  // monotonic sequence guarantees every add re-triggers the effect.
+  const aiScaffoldRequestSequenceRef = useRef<(() => number) | null>(null);
+  if (aiScaffoldRequestSequenceRef.current === null) {
+    aiScaffoldRequestSequenceRef.current = createRequestIdSequence();
+  }
   const [executionStatusMap, setExecutionStatusMap] = useState<
     Record<string, 'running' | 'success' | 'failed' | 'waiting'>
   >({});
@@ -412,18 +425,19 @@ function App() {
    * so it can ship them. The runtime snapshots them per run; the bundle
    * rebuilds when the dialog opens.
    */
-  const workspaceDocuments = useMemo<WorkflowDocument[]>(() => {
-    const docs = [...tabDocumentsRef.current.values()].map((memory) => memory.document);
-    for (const record of workflowRecords) {
-      try {
-        docs.push(parseWorkflow(record.specification).document);
-      } catch {
-        // Ignore unparsable library entries; they can neither execute nor ship.
-      }
-    }
-    return docs;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workflowRecords, workflowId, specText, specFormat]);
+  const workspaceDocuments = useMemo<WorkflowDocument[]>(
+    () =>
+      collectWorkspaceDocuments(
+        tabDocumentsRef.current,
+        { id: workflowId, document },
+        workflowRecords,
+        parseWorkflow,
+      ),
+    // Task 67: `document` (live state) represents the ACTIVE tab — the ref
+    // entry is refreshed by a commit-phase effect, so reading it here could
+    // hand same-pass consumers a pre-edit snapshot.
+    [workflowRecords, workflowId, document],
+  );
   const workflowPersistence = useMemo(
     () => assertWorkflowPersistence(createWorkflowPersistence(window.localStorage, WORKFLOW_LIBRARY_KEY)),
     [],
@@ -1207,7 +1221,7 @@ function App() {
       const createdName = Object.keys(next.do?.[next.do.length - 1] || {})[0];
       setSelectedId(`/do/${createdName}`);
       syncDocument(next);
-      setAiScaffoldRequest({ kind: taskType, requestId: Date.now() });
+      setAiScaffoldRequest({ kind: taskType, requestId: aiScaffoldRequestSequenceRef.current!() });
       setNotice(`Added ${spec.label} — scaffolding ${spec.subflowName} sub-flow`);
       window.setTimeout(() => setNotice(''), 2400);
       return;
@@ -1412,23 +1426,18 @@ function App() {
   const handleOpenSubflow = useCallback(
     (name: string, namespace = 'dubai-government', version = '1.0.0') => {
       // Same-name sub-flows in different namespaces are distinct documents:
-      // match by namespace when the caller supplies one (unknown namespace on
-      // the candidate falls back to a name match for legacy/edge documents).
-      const matchesNamespace = (candidateNamespace: string | undefined) =>
-        namespace === undefined || candidateNamespace === undefined || candidateNamespace === namespace;
-      // If already open in tabs
-      const matchingTab = openTabIds.find((tabId) => {
-        const mem =
-          tabId === workflowId ? { name: workflowName, document } : tabDocumentsRef.current.get(tabId);
-        if (mem?.name === name) return matchesNamespace(mem.document?.document?.namespace);
-        const rec = workflowRecords.find((r) => r.id === tabId);
-        if (rec?.name !== name) return false;
-        if (namespace === undefined) return true;
-        try {
-          return parseWorkflow(rec.specification).document.document?.namespace === namespace;
-        } catch {
-          return true;
-        }
+      // match strictly on the caller's namespace (Task 66). Only a
+      // caller-undefined namespace falls back to name-only matching for
+      // legacy entries; candidates whose namespace cannot be verified —
+      // missing field or unparsable specification — are excluded.
+      const matchingTab = findMatchingSubflowTab({
+        tabIds: openTabIds,
+        activeTabId: workflowId,
+        activeTab: { name: workflowName, document },
+        tabMemories: tabDocumentsRef.current,
+        records: workflowRecords,
+        target: { name, namespace },
+        parseWorkflowSpec: parseWorkflow,
       });
       if (matchingTab) {
         handleSelectTab(matchingTab);
@@ -1438,15 +1447,9 @@ function App() {
       }
 
       stashActiveTab();
-      const existing = workflowRecords.find((record) => {
-        if (record.name.toLowerCase() !== name.toLowerCase() && record.id !== name) return false;
-        if (namespace === undefined) return true;
-        try {
-          return parseWorkflow(record.specification).document.document?.namespace === namespace;
-        } catch {
-          return true;
-        }
-      });
+      const existing = workflowRecords.find((record) =>
+        subflowRecordMatchesTarget(record, { name, namespace }, parseWorkflow),
+      );
       if (existing) {
         setOpenTabIds((prev) => (prev.includes(existing.id) ? prev : [...prev, existing.id]));
         openWorkflowRecord(existing);
