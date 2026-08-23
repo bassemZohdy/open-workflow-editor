@@ -1436,6 +1436,109 @@ describe('gateway AI provider endpoints (Task 32)', () => {
   });
 });
 
+describe('gateway with the real provider bridge (Task 54)', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  async function post(
+    handler: ReturnType<typeof createRuntimeGatewayHandler>,
+    pathname: string,
+    body: unknown,
+    method = 'POST',
+  ) {
+    const chunks: string[] = body === undefined ? [] : [JSON.stringify(body)];
+    let resStatus = 200;
+    let resBody = '';
+    const req: unknown = {
+      method,
+      url: pathname,
+      headers: {},
+      async *[Symbol.asyncIterator]() {
+        for (const chunk of chunks) yield chunk;
+      },
+    };
+    const res: unknown = {
+      statusCode: 200,
+      setHeader() {
+        /* noop */
+      },
+      end(data?: string) {
+        resBody = data || '';
+      },
+    };
+    await handler(req as never, res as never);
+    resStatus = (res as { statusCode: number }).statusCode;
+    let parsed: unknown = null;
+    try {
+      parsed = JSON.parse(resBody);
+    } catch {
+      parsed = resBody;
+    }
+    return { status: resStatus, body: parsed };
+  }
+
+  it('routes /ai/chat through the real bridge to the provider', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: 'hello from provider' } }], model: 'gpt-test' }),
+      text: async () => '',
+    });
+    const handler = createRuntimeGatewayHandler({
+      aiProviderConfig: { apiKey: 'sk-test', baseUrl: 'https://provider.test/v1' },
+    });
+    const result = await post(handler, '/ai/chat', {
+      model: 'gpt-test',
+      messages: [{ role: 'user', content: 'hi' }],
+    });
+    expect(result.status).toBe(200);
+    expect((result.body as { result: { completion: string } }).result.completion).toBe('hello from provider');
+    const [url, init] = fetchMock.mock.calls[0] as [string, { headers: Record<string, string> }];
+    expect(url).toBe('https://provider.test/v1/chat');
+    expect(init.headers.authorization).toBe('Bearer sk-test');
+
+    // The call is on the audit trail with the AI kind.
+    const audit = (await post(handler, '/audit', undefined, 'GET')) as {
+      body: { entries: Array<{ pathname: string; aiKind?: string }> };
+    };
+    const chatEntries = audit.body.entries.filter((entry) => entry.pathname === '/ai/chat');
+    expect(chatEntries.length).toBeGreaterThan(0);
+    expect(chatEntries[0].aiKind).toBe('chat');
+  });
+
+  it('reports provider failures as 502 through the real bridge', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 402,
+      json: async () => ({}),
+      text: async () => 'quota exceeded',
+    });
+    const handler = createRuntimeGatewayHandler({
+      aiProviderConfig: { apiKey: 'sk-test', baseUrl: 'https://provider.test/v1' },
+    });
+    const result = await post(handler, '/ai/chat', { messages: [{ role: 'user', content: 'hi' }] });
+    expect(result.status).toBe(502);
+    expect((result.body as { error?: string }).error || JSON.stringify(result.body)).toContain(
+      'AI provider error (402)',
+    );
+  });
+
+  it('returns 503 when the real bridge reports no key', async () => {
+    const handler = createRuntimeGatewayHandler({});
+    const result = await post(handler, '/ai/chat', { messages: [] });
+    expect(result.status).toBe(503);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
 describe('demo engine AI delegation (Task 33)', () => {
   async function runToCompletion(
     runtime: ReturnType<typeof createDemoRuntimeAdapter>,
