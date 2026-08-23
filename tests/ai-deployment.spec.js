@@ -95,6 +95,10 @@ test('demo engine executes the scaffolded sub-flow document', async ({ page }) =
   await expect(logs).toContainText('Executing sub-flow dubai-government/billing-process');
   await expect(logs).toContainText('Completed sub-flow dubai-government/billing-process');
   await expect(logs).toContainText('Completed local demo run');
+
+  // The task timeline annotates executed sub-flow steps with their scope.
+  const subflowStep = page.locator('.runtime-progress-item').filter({ hasText: 'initSubflow' }).first();
+  await expect(subflowStep).toContainText('runTask/subflow/billing-process/initSubflow');
 });
 
 test('demo engine executes the scaffolded AI sub-flow document (Task 40)', async ({ page }) => {

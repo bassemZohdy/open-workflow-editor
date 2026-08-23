@@ -34,6 +34,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- **Runtime task timeline annotates sub-flow steps with their scope:** executed sub-flow steps (`<task>/subflow/<name>/<step>`) now display their scoped path in the timeline row instead of a bare name — plain names like `captureResult` can repeat across sub-flows. (Task 45)
 - **Deployment bundle dialog previews shipped sub-flow files individually:** each `subflows/<namespace>/<name>.yaml` artifact now gets its own tab next to the main files, with per-file copy/download (download names sanitize `/` → `_`); previously artifacts were only visible embedded in the ConfigMap/Dockerfile/README tabs. (Task 44)
 - **Unresolved sub-flow warnings offer one-click Scaffold:** the warning's message says "Open or scaffold it before deploying", but its item only selected the task. `GraphIssue` gained `subflowTarget`, and Problems-panel items support an optional quick `action` — sub-flow warnings now render a **Scaffold** button that opens/sub-flow scaffolds the exact target; scaffolding resolves the warning live. (Task 43)
 - **Problems panel groups sub-flow warnings under their own label:** Task 39 items grouped by `kind`, but the group-label fallback mapped anything that is not `schema`/`graph` to "Task" — unresolved sub-flow warnings rendered under a misleading header. Now a dedicated **"Sub-flow references"** group (`⇄` icon); the Task 39 E2E asserts the label. (Task 42)

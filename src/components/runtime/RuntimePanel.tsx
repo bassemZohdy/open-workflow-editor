@@ -590,6 +590,11 @@ export function RuntimePanel({
                   {progressItems.map((item, index) => {
                     const itemStatus = String(item.status || item.state || 'unknown').toLowerCase();
                     const itemName = item.name || item.task || item.id || `Task ${index + 1}`;
+                    // Scoped demo-engine ids (`<task>/subflow/<name>/<step>`) give
+                    // executed sub-flow steps their path context (plain names can
+                    // repeat across sub-flows).
+                    const itemScope =
+                      item.id && item.id !== itemName && item.id.includes('/') ? item.id : null;
                     return (
                       <div
                         className={`runtime-progress-item runtime-progress-${itemStatus}`}
@@ -599,7 +604,7 @@ export function RuntimePanel({
                         <span>
                           <b>{itemName}</b>
                           <small>
-                            {item.type || 'task'}
+                            {itemScope || item.type || 'task'}
                             {item.durationMs !== undefined
                               ? ` · ${formatRuntimeDuration(item.durationMs)}`
                               : ''}
