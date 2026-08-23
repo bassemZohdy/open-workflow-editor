@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-08-23
+
+The sub-flow lifecycle goes end-to-end: scaffold, diagnose, execute (demo engine), observe and deploy. Suite: **106 unit / 71 E2E (parallel)**.
+
 ### Added (Tasks 20–23)
 
 - Drag-to-reorder workflow library rows with persisted manual order (`open-workflow-editor:library-order:v1`). (Task 20)
