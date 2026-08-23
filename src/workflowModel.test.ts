@@ -1490,6 +1490,139 @@ describe('demo engine AI delegation (Task 33)', () => {
   });
 });
 
+describe('demo engine sub-flow document execution (Task 38)', () => {
+  async function runToCompletion(
+    runtime: ReturnType<typeof createDemoRuntimeAdapter>,
+    workflow: WorkflowDocument,
+  ) {
+    const started = (await runtime.start(workflow, {
+      prompt: 'Draft a summary',
+      goal: 'Resolve the ticket',
+      model: 'demo-model',
+    })) as { runId: string };
+    let status = (await runtime.status(started.runId)) as {
+      status: string;
+      output?: Record<string, unknown>;
+      tasks: Array<{ id: string; name: string; type: string }>;
+      failures: Array<{ message: string }>;
+      logs: string[];
+    };
+    for (
+      let attempt = 0;
+      attempt < 60 && status.status === 'running' && !status.failures.length;
+      attempt += 1
+    ) {
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 0));
+      status = (await runtime.status(started.runId)) as typeof status;
+    }
+    return status;
+  }
+
+  const billingDocument: WorkflowDocument = {
+    document: { dsl: '1.0.3', namespace: 'dubai-government', name: 'billing-process', version: '0.1.0' },
+    do: [{ initSubflow: { set: { subflowReady: true } } }],
+  };
+
+  it('executes a referenced user sub-flow document from the workspace', async () => {
+    const runtime = createDemoRuntimeAdapter({
+      stepDelay: 0,
+      subflowDocuments: () => [billingDocument],
+    });
+    let workflow = parseWorkflow(NEW_WORKFLOW).document;
+    workflow = {
+      ...workflow,
+      do: [
+        ...(workflow.do || []),
+        {
+          callBilling: {
+            run: {
+              workflow: {
+                namespace: 'dubai-government',
+                name: 'billing-process',
+                version: '0.1.0',
+              },
+            },
+          },
+        },
+        { mapOutcome: { set: { ready: '${ $context.callBilling.subflowReady }' } } },
+      ],
+    };
+
+    const status = await runToCompletion(runtime, workflow);
+    expect(status.status).toBe('completed');
+    const billing = status.output?.['callBilling'] as
+      { subflowReady?: boolean; executed?: boolean } | undefined;
+    expect(billing?.executed).toBe(true);
+    expect(billing?.subflowReady).toBe(true);
+    expect(status.output?.['ready']).toBe(true);
+    expect(status.tasks.map((task) => task.id)).toContainEqual(
+      'callBilling/subflow/billing-process/initSubflow',
+    );
+    expect(status.logs.join('\n')).toContain('Executing sub-flow dubai-government/billing-process');
+  });
+
+  it('executes a provided AI-namespace document instead of the mock contract', async () => {
+    const customLlm: WorkflowDocument = {
+      document: { dsl: '1.0.3', namespace: 'ai', name: 'prompt-llm', version: '0.1.0' },
+      do: [{ companyModel: { set: { llmResult: '${ $input.prompt }', model: 'company-gpt' } } }],
+    };
+    const runtime = createDemoRuntimeAdapter({ stepDelay: 0, subflowDocuments: [customLlm] });
+    let workflow = parseWorkflow(NEW_WORKFLOW).document;
+    workflow = addTopLevelAiTask(workflow, 'llm-call');
+    workflow = {
+      ...workflow,
+      do: [...(workflow.do || []), { mapResult: { set: { summary: '${ $context.aiLlmTask.llmResult }' } } }],
+    };
+
+    const status = await runToCompletion(runtime, workflow);
+    expect(status.status).toBe('completed');
+    const llm = status.output?.['aiLlmTask'] as
+      { llmResult?: string; model?: string; executed?: boolean } | undefined;
+    expect(llm?.executed).toBe(true);
+    expect(llm?.llmResult).toBe('Draft a summary');
+    expect(llm?.model).toBe('company-gpt');
+    expect(status.output?.['summary']).toBe('Draft a summary');
+    expect(status.tasks.map((task) => task.id)).toContainEqual('aiLlmTask/subflow/prompt-llm/companyModel');
+  });
+
+  it('guards against runaway sub-flow recursion with a depth limit', async () => {
+    const selfLoop: WorkflowDocument = {
+      document: { dsl: '1.0.3', namespace: 'loop', name: 'recursive', version: '0.1.0' },
+      do: [{ again: { run: { workflow: { namespace: 'loop', name: 'recursive', version: '0.1.0' } } } }],
+    };
+    const runtime = createDemoRuntimeAdapter({ stepDelay: 0, subflowDocuments: [selfLoop] });
+    let workflow = parseWorkflow(NEW_WORKFLOW).document;
+    workflow = {
+      ...workflow,
+      do: [
+        {
+          kickOff: {
+            run: { workflow: { namespace: 'loop', name: 'recursive', version: '0.1.0' } },
+          },
+        },
+      ],
+    };
+
+    const status = await runToCompletion(runtime, workflow);
+    expect(status.status).toBe('failed');
+    const first = status.failures[0]?.message || '';
+    expect(first).toContain('stopped sub-flow nesting at depth');
+    expect(status.logs.join('\n')).toContain('Failed local demo run');
+  });
+
+  it('keeps the reference mock behavior when no matching document exists', async () => {
+    const runtime = createDemoRuntimeAdapter({ stepDelay: 0, subflowDocuments: [billingDocument] });
+    let workflow = parseWorkflow(NEW_WORKFLOW).document;
+    workflow = addTopLevelAiTask(workflow, 'llm-call');
+
+    const status = await runToCompletion(runtime, workflow);
+    expect(status.status).toBe('completed');
+    const llm = status.output?.['aiLlmTask'] as { llmResult?: string; executed?: boolean } | undefined;
+    expect(llm?.executed).toBeUndefined();
+    expect(llm?.llmResult).toContain('[mock-llm] Draft a summary');
+  });
+});
+
 describe('buildLibraryRows (Task 34 — duplicate sidebar row)', () => {
   const saved = createWorkflowRecord({
     id: 'wf-saved',

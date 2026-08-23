@@ -405,18 +405,19 @@ function App() {
     >
   >(new Map());
   /**
-   * Workspace sub-flow documents eligible for the deployment bundle: open tab
-   * documents (live edits win) plus parsed saved library records. Rebuilt when
-   * the dialog opens so the ref snapshot is current.
+   * Workspace sub-flow documents (open tab documents — live edits win — plus
+   * parsed saved library records): fed to the demo engine so `run.workflow`
+   * delegations execute the referenced documents, and to the deployment bundle
+   * so it can ship them. The runtime snapshots them per run; the bundle
+   * rebuilds when the dialog opens.
    */
-  const subflowDocuments = useMemo<WorkflowDocument[]>(() => {
-    if (!showDeploymentBundle) return [];
+  const workspaceDocuments = useMemo<WorkflowDocument[]>(() => {
     const docs = [...tabDocumentsRef.current.values()].map((memory) => memory.document);
     for (const record of workflowRecords) {
       try {
         docs.push(parseWorkflow(record.specification).document);
       } catch {
-        // Ignore unparsable library entries; they cannot resolve sub-flows.
+        // Ignore unparsable library entries; they can neither execute nor ship.
       }
     }
     return docs;
@@ -2831,6 +2832,7 @@ do:
             onOpenChange={setRuntimeOpen}
             onRunStatusChange={handleRunStatusChange}
             onHealthChange={(healthy) => setRuntimeHealthy(healthy)}
+            subflowDocuments={workspaceDocuments}
           />
         </aside>
       </div>
@@ -2867,7 +2869,7 @@ do:
         onClose={() => setShowDeploymentBundle(false)}
         specYaml={specFormat === 'yaml' ? specText : serializeWorkflow(document, 'yaml')}
         workflowName={workflowName}
-        availableDocuments={subflowDocuments}
+        availableDocuments={workspaceDocuments}
       />
       <CommandPalette
         open={commandPaletteOpen}

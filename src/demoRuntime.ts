@@ -52,6 +52,10 @@ interface DemoRun {
   activeTask: DemoActiveTask | null;
   cancelRequested: boolean;
   executeScript?: ScriptExecutor;
+  /** Referenced sub-flow documents (snapshotted at run start). */
+  subflowDocuments: WorkflowDocument[];
+  /** Current sub-flow nesting depth (guarded against runaway recursion). */
+  subflowDepth: number;
   output?: unknown;
   endedAt?: string;
   durationMs?: number;
@@ -227,6 +231,42 @@ async function executeTaskList(taskList: TaskItem[] | undefined, run: DemoRun, s
   }
 }
 
+/**
+ * Execute a referenced sub-flow document (`run.workflow`) with the demo engine.
+ * The sub-flow runs against a child context seeded with the parent's state and
+ * input, so its `set` keys (e.g. the AI contracts' `captureResult`) land in the
+ * delegation result and parent mapping references (`$context.<task>.field`)
+ * resolve. Logs and task progress stream into the same run with a scoped path.
+ */
+async function executeSubflowDocument(
+  document: WorkflowDocument,
+  subflow: { namespace?: string; name?: string; version?: string },
+  run: DemoRun,
+  scope: string,
+  taskName: string,
+  definition: TaskDefinition,
+): Promise<{ output: unknown; next?: string }> {
+  const target = `${subflow.namespace}/${subflow.name}@${subflow.version}`;
+  if (run.subflowDepth >= MAX_SUBFLOW_DEPTH) {
+    throw new Error(
+      `Demo engine stopped sub-flow nesting at depth ${MAX_SUBFLOW_DEPTH} (${subflow.namespace}/${subflow.name}).`,
+    );
+  }
+  const child: DemoRun = {
+    ...run,
+    context: clone(run.context),
+    input: clone(run.input),
+    subflowDepth: run.subflowDepth + 1,
+  };
+  addLog(run, `Executing sub-flow ${subflow.namespace}/${subflow.name}`, { target });
+  await executeTaskList(document.do, child, `${scope}${taskName}/subflow/${subflow.name}/`);
+  addLog(run, `Completed sub-flow ${subflow.namespace}/${subflow.name}`, { target });
+  return {
+    output: { demo: true, executed: true, subflow: target, ...clone(child.context) },
+    next: definition.then,
+  };
+}
+
 async function executeTask(
   name: string,
   definition: TaskDefinition,
@@ -349,8 +389,18 @@ async function executeTask(
   }
   if (definition.run?.workflow) {
     const subflow = definition.run.workflow;
-    // AI delegation: simulate the catalog-backed sub-flow contract so the
-    // parent's mapping steps (`$context.<task>.llmResult`) resolve end-to-end.
+    // A workspace document matching the target replaces the mock: execute its
+    // task list so cross-tab orchestration simulates end-to-end.
+    const subflowDocument = run.subflowDocuments.find(
+      (candidate) =>
+        candidate.document?.namespace === subflow.namespace && candidate.document?.name === subflow.name,
+    );
+    if (subflowDocument) {
+      return executeSubflowDocument(subflowDocument, subflow, run, scope, name, definition);
+    }
+    // AI delegation without a document: simulate the catalog-backed sub-flow
+    // contract so the parent's mapping steps (`$context.<task>.llmResult`)
+    // resolve end-to-end.
     if (subflow.namespace === 'ai') {
       const isAgent = subflow.name === 'ai-agent';
       // LLM sub-flows read the prompt first; agent sub-flows read the goal first.
@@ -393,9 +443,21 @@ async function executeTask(
 export interface DemoRuntimeOptions {
   stepDelay?: number;
   executeScript?: ScriptExecutor;
+  /**
+   * Workspace sub-flow documents matched by `namespace`+`name` when a task
+   * delegates via `run.workflow`. A live array or a getter (the runtime
+   * snapshots at run start, so in-flight runs are immune to later edits).
+   */
+  subflowDocuments?: WorkflowDocument[] | (() => WorkflowDocument[]);
 }
 
-export function createDemoRuntimeAdapter({ stepDelay = 180, executeScript }: DemoRuntimeOptions = {}) {
+const MAX_SUBFLOW_DEPTH = 4;
+
+export function createDemoRuntimeAdapter({
+  stepDelay = 180,
+  executeScript,
+  subflowDocuments = [],
+}: DemoRuntimeOptions = {}) {
   const runs = new Map<string, DemoRun>();
   let sequence = 0;
 
@@ -404,6 +466,8 @@ export function createDemoRuntimeAdapter({ stepDelay = 180, executeScript }: Dem
   const start = async (workflow: WorkflowDocument, inputs: Record<string, unknown> = {}) => {
     demoValidation(workflow);
     const runId = `demo-run-${++sequence}`;
+    const resolvedSubflowDocuments =
+      typeof subflowDocuments === 'function' ? subflowDocuments() : subflowDocuments;
     const run: DemoRun = {
       runId,
       status: 'running',
@@ -422,6 +486,8 @@ export function createDemoRuntimeAdapter({ stepDelay = 180, executeScript }: Dem
       activeTask: null,
       cancelRequested: false,
       executeScript,
+      subflowDocuments: clone(resolvedSubflowDocuments),
+      subflowDepth: 0,
     };
     runs.set(runId, run);
     addLog(run, `Started local demo run ${runId}`, {

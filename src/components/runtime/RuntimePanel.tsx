@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback, type ChangeEvent } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef, type ChangeEvent } from 'react';
 import { createHttpRuntimeAdapter } from '../../runtimeAdapter';
 import { createDemoRuntimeAdapter } from '../../demoRuntime';
 import {
@@ -18,6 +18,8 @@ export interface RuntimePanelProps {
   side?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** Workspace sub-flow documents the demo engine can execute on delegation. */
+  subflowDocuments?: WorkflowDocument[];
   onRunStatusChange?: (status: Record<string, unknown> | null) => void;
   /** Reports gateway connectivity (null = no gateway configured) for the status bar. */
   onHealthChange?: (healthy: boolean | null, latencyMs?: number) => void;
@@ -30,10 +32,20 @@ export function RuntimePanel({
   onOpenChange,
   onRunStatusChange,
   onHealthChange,
+  subflowDocuments = [],
 }: RuntimePanelProps) {
   const [demoDelay, setDemoDelay] = useState(500);
+  // The adapter snapshots sub-flow documents at run start (getter → ref), so
+  // later workspace edits never disturb an in-flight demo run.
+  const subflowDocsRef = useRef<WorkflowDocument[]>(subflowDocuments);
+  subflowDocsRef.current = subflowDocuments;
   const demoRuntime = useMemo(
-    () => createDemoRuntimeAdapter({ stepDelay: demoDelay, executeScript: executeNodeSandboxScript }),
+    () =>
+      createDemoRuntimeAdapter({
+        stepDelay: demoDelay,
+        executeScript: executeNodeSandboxScript,
+        subflowDocuments: () => subflowDocsRef.current,
+      }),
     [demoDelay],
   );
   const [gatewayUrl, setGatewayUrl] = useState<string>(() => {

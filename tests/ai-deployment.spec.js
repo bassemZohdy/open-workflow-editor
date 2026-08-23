@@ -65,6 +65,30 @@ test('deployment bundle ships a scaffolded user sub-flow document', async ({ pag
 });
 
 // ---------------------------------------------------------------------------
+// Task 38: demo engine executes referenced sub-flow documents
+// ---------------------------------------------------------------------------
+
+test('demo engine executes the scaffolded sub-flow document', async ({ page }) => {
+  // Scaffold a non-AI sub-flow from a run task's inspector.
+  await page.getByRole('button', { name: 'Add Run JavaScript task' }).press('Enter');
+  await page.getByLabel('Run mode').selectOption('subflow');
+  await page.getByLabel('Sub-flow name', { exact: true }).fill('billing-process');
+  await page.getByLabel('Sub-flow name', { exact: true }).blur();
+  await page.getByRole('button', { name: /Scaffold.*billing-process/i }).click();
+  await expect(page.locator('.workflow-name-input')).toHaveValue('billing-process');
+
+  // Back on the parent, running against the demo engine executes the sub-flow.
+  await page.locator('.document-tab').first().click();
+  await expect(page.locator('.runtime-pace-control select')).toBeVisible();
+  await page.getByRole('button', { name: 'Start run' }).click();
+  await expect(page.locator('.runtime-status-completed')).toBeVisible({ timeout: 8000 });
+  const logs = page.getByLabel('Workflow run logs');
+  await expect(logs).toContainText('Executing sub-flow dubai-government/billing-process');
+  await expect(logs).toContainText('Completed sub-flow dubai-government/billing-process');
+  await expect(logs).toContainText('Completed local demo run');
+});
+
+// ---------------------------------------------------------------------------
 // Task 36: full right-rail collapse renders an icon strip without clipped text
 // ---------------------------------------------------------------------------
 
