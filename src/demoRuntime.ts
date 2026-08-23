@@ -35,6 +35,18 @@ interface ScriptExecutionPayload {
 
 type ScriptExecutor = (payload: ScriptExecutionPayload) => Promise<unknown>;
 
+/**
+ * Mutable control state shared BY REFERENCE between a parent run and every
+ * sub-flow child run (children intentionally share `tasks`/`logs` too, so
+ * plain spread copies would snapshot these flags as stale values).
+ */
+interface DemoRunControl {
+  /** Flipped by `cancel()`; observed by parent and children via `ensureActive`. */
+  cancelRequested: boolean;
+  /** Context keys holding task-keyed outputs; flat script merges skip them. */
+  taskOutputNames: string[];
+}
+
 interface DemoRun {
   runId: string;
   status: string;
@@ -51,7 +63,7 @@ interface DemoRun {
   startedAt: string;
   startedAtMs: number;
   activeTask: DemoActiveTask | null;
-  cancelRequested: boolean;
+  control: DemoRunControl;
   executeScript?: ScriptExecutor;
   /** Referenced sub-flow documents (snapshotted at run start). */
   subflowDocuments: WorkflowDocument[];
@@ -149,7 +161,24 @@ function addLog(run: DemoRun, message: string, details: Record<string, unknown> 
 }
 
 function ensureActive(run: DemoRun): void {
-  if (run.cancelRequested) throw new Error('Demo run cancelled.');
+  if (run.control.cancelRequested) throw new Error('Demo run cancelled.');
+}
+
+/** Record `name` as a task-keyed output so later flat merges cannot clobber it. */
+function recordTaskOutputName(run: DemoRun, name: string): void {
+  if (!run.control.taskOutputNames.includes(name)) run.control.taskOutputNames.push(name);
+}
+
+/**
+ * Legacy flat merge of sandbox script results into the run context. Keys that
+ * already hold an earlier task's structured output are skipped so a later
+ * script result cannot overwrite `$context.<task>` references.
+ */
+function flatMergeScriptResult(run: DemoRun, result: Record<string, unknown>): void {
+  for (const [key, value] of Object.entries(result)) {
+    if (run.control.taskOutputNames.includes(key)) continue;
+    run.context[key] = value;
+  }
 }
 
 function createTaskProgress(
@@ -205,6 +234,7 @@ async function executeTaskList(taskList: TaskItem[] | undefined, run: DemoRun, s
         typeof result.output === 'object'
       ) {
         run.context[name] = clone(result.output);
+        recordTaskOutputName(run, name);
       }
       progress.status = 'completed';
       progress.output = clone(result.output);
@@ -223,7 +253,7 @@ async function executeTaskList(taskList: TaskItem[] | undefined, run: DemoRun, s
         index += 1;
       }
     } catch (error) {
-      progress.status = run.cancelRequested ? 'cancelled' : 'failed';
+      progress.status = run.control.cancelRequested ? 'cancelled' : 'failed';
       progress.error = error instanceof Error ? error.message : String(error);
       progress.durationMs = Date.now() - startedAtMs;
       progress.endedAt = new Date().toISOString();
@@ -263,15 +293,33 @@ async function executeSubflowDocument(
     ...run,
     context: clone(run.context),
     input: clone(run.input),
+    // Shared by reference so `cancel()` on the parent reaches the child
+    // (Task 59) and task-output merge guards keep protecting parent outputs.
+    control: run.control,
     subflowDepth: run.subflowDepth + 1,
   };
   addLog(run, `Executing sub-flow ${subflow.namespace}/${subflow.name}`, { target });
   await executeTaskList(document.do, child, `${scope}${taskName}/subflow/${subflow.name}/`);
   addLog(run, `Completed sub-flow ${subflow.namespace}/${subflow.name}`, { target });
-  return {
-    output: { demo: true, executed: true, subflow: target, ...clone(child.context) },
-    next: definition.then,
-  };
+  // Child context fields stay at the top level so parent mapping references
+  // (`$context.<task>.<field>`) resolve; completion sentinels are applied LAST
+  // so a sub-flow writing its own `demo`/`executed`/`subflow` keys cannot
+  // clobber them. Colliding user values survive under `subflowSet` (Task 60).
+  const output: Record<string, unknown> = { ...clone(child.context) };
+  const collided: Record<string, unknown> = {};
+  for (const key of ['demo', 'executed', 'subflow']) {
+    if (key in output) {
+      collided[key] = output[key];
+      delete output[key];
+    }
+  }
+  if (Object.keys(collided).length > 0) {
+    output.subflowSet = { ...(output.subflowSet as Record<string, unknown> | undefined), ...collided };
+  }
+  output.demo = true;
+  output.executed = true;
+  output.subflow = target;
+  return { output, next: definition.then };
 }
 
 async function executeTask(
@@ -381,7 +429,9 @@ async function executeTask(
         context: run.context,
         catalogs: run.catalogs,
       });
-      if (result && typeof result === 'object' && !Array.isArray(result)) Object.assign(run.context, result);
+      if (result && typeof result === 'object' && !Array.isArray(result)) {
+        flatMergeScriptResult(run, result as Record<string, unknown>);
+      }
       addLog(run, `Executed JavaScript in Node sandbox for ${scope}${name}`, {
         language: script.language,
         output: JSON.stringify(result),
@@ -497,7 +547,7 @@ export function createDemoRuntimeAdapter({
       startedAt: new Date().toISOString(),
       startedAtMs: Date.now(),
       activeTask: null,
-      cancelRequested: false,
+      control: { cancelRequested: false, taskOutputNames: [] },
       executeScript,
       subflowDocuments: clone(resolvedSubflowDocuments),
       subflowDepth: 0,
@@ -511,7 +561,7 @@ export function createDemoRuntimeAdapter({
 
     void executeTaskList(workflow.do || [], run)
       .then(() => {
-        if (run.cancelRequested) return;
+        if (run.control.cancelRequested) return;
         run.status = 'completed';
         run.output = clone(run.context);
         run.endedAt = new Date().toISOString();
@@ -522,7 +572,7 @@ export function createDemoRuntimeAdapter({
         });
       })
       .catch((error: unknown) => {
-        run.status = run.cancelRequested ? 'cancelled' : 'failed';
+        run.status = run.control.cancelRequested ? 'cancelled' : 'failed';
         run.failures.push({ message: error instanceof Error ? error.message : String(error) });
         run.endedAt = new Date().toISOString();
         run.durationMs = Date.now() - run.startedAtMs;
@@ -545,7 +595,7 @@ export function createDemoRuntimeAdapter({
   const cancel = async (runId: string) => {
     const run = getRun(runId);
     if (run.status === 'running') {
-      run.cancelRequested = true;
+      run.control.cancelRequested = true;
       addLog(run, `Cancellation requested for ${run.runId}`, {
         activeTask: run.activeTask?.name || 'none',
       });
