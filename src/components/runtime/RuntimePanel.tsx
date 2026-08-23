@@ -11,6 +11,7 @@ import {
   executeNodeSandboxScript,
 } from '../../runtimeStatus';
 import type { WorkflowDocument } from '../../types';
+import { resolveTimelineScope } from '../../runtimeTimelineScope';
 import { RuntimeLogList } from './RuntimeLogList';
 
 export interface RuntimePanelProps {
@@ -593,11 +594,13 @@ export function RuntimePanel({
                   {progressItems.map((item, index) => {
                     const itemStatus = String(item.status || item.state || 'unknown').toLowerCase();
                     const itemName = item.name || item.task || item.id || `Task ${index + 1}`;
-                    // Scoped demo-engine ids (`<task>/subflow/<name>/<step>`) give
-                    // executed sub-flow steps their path context (plain names can
-                    // repeat across sub-flows).
-                    const itemScope =
-                      item.id && item.id !== itemName && item.id.includes('/') ? item.id : null;
+                    // Sub-flow demo-engine ids contain a literal `/subflow/`
+                    // path segment (`<task>/subflow/<name>/<step>`); they give
+                    // executed sub-flow steps their path context (plain names
+                    // can repeat across sub-flows). Other slash-containing ids
+                    // (for/fork/try/catch container scopes) fall back to the
+                    // task-type label.
+                    const itemScope = resolveTimelineScope(item.id, itemName);
                     return (
                       <div
                         className={`runtime-progress-item runtime-progress-${itemStatus}`}
