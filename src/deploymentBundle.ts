@@ -92,10 +92,57 @@ const indentYaml = (yaml: string): string =>
     .map((line) => (line.trim() ? `    ${line}` : line))
     .join('\n');
 
+/** Placeholder for a hostile namespace/name segment that sanitizes to nothing. */
+const SUBFLOW_SEGMENT_PLACEHOLDER = 'subflow';
+/** Caps a sanitized namespace/name segment (mirrors the SDK identifier limit, keeps ConfigMap keys < 253 chars). */
+const SUBFLOW_SEGMENT_MAX_LENGTH = 63;
+
+/**
+ * Deterministic 32-bit FNV-1a digest rendered in base36 — a stable collision
+ * discriminator (no Date.now/random) for hostile namespace/name rewrites.
+ */
+const stableSegmentHash = (value: string): string => {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(36);
+};
+
+/**
+ * Sanitize one namespace/name segment for Kubernetes ConfigMap keys and mount
+ * paths (Tasks 58+63): characters outside `[-._a-zA-Z0-9]` become `-`, runs
+ * collapse, traversal-shaped dots are trimmed, and empty results fall back to
+ * a placeholder. When the sanitizer rewrites the value, a stable hash suffix
+ * keeps distinct inputs from colliding after sanitization; already-safe
+ * segments pass through unchanged.
+ */
+export const sanitizeSubflowSegment = (value: string): string => {
+  const normalized = value
+    .replace(/[^-._a-zA-Z0-9]/g, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/\.{2,}/g, '.')
+    .replace(/^[-.]+|[-.]+$/g, '');
+  const base = normalized.slice(0, SUBFLOW_SEGMENT_MAX_LENGTH);
+  if (!base) {
+    return `${SUBFLOW_SEGMENT_PLACEHOLDER}-${stableSegmentHash(value)}`;
+  }
+  return base === value ? base : `${base}-${stableSegmentHash(value)}`;
+};
+
+/**
+ * Charset-safe ConfigMap key (`data` entry and `items[].key`) for a sub-flow —
+ * Kubernetes rejects keys containing `/` (Task 58). Layout is flattened with
+ * dots: `subflows.<namespace>.<name>.yaml`.
+ */
 export const subflowKey = (target: SubflowTarget): string =>
-  `subflows/${target.namespace}/${target.name}.yaml`;
-const subflowMount = (target: SubflowTarget): string =>
-  `/app/subflows/${target.namespace}/${target.name}.yaml`;
+  `subflows.${sanitizeSubflowSegment(target.namespace)}.${sanitizeSubflowSegment(target.name)}.yaml`;
+/** Shipped file path (ConfigMap `items[].path` / volume `subPath`): `subflows/<namespace>/<name>.yaml`. */
+const subflowPath = (target: SubflowTarget): string =>
+  `subflows/${sanitizeSubflowSegment(target.namespace)}/${sanitizeSubflowSegment(target.name)}.yaml`;
+/** Absolute container mount path for a shipped sub-flow file. */
+const subflowMount = (target: SubflowTarget): string => `/app/${subflowPath(target)}`;
 
 export function generateDeploymentBundle(
   specYaml: string,
@@ -189,7 +236,7 @@ ${artifacts
   .map(
     (artifact) => `            - name: spec-volume
               mountPath: ${subflowMount(artifact)}
-              subPath: ${subflowKey(artifact)}`,
+              subPath: ${subflowPath(artifact)}`,
   )
   .join('\n')}
           resources:
@@ -221,7 +268,7 @@ ${artifacts
 ${artifacts
   .map(
     (artifact) => `              - key: ${subflowKey(artifact)}
-                path: ${subflowKey(artifact)}`,
+                path: ${subflowPath(artifact)}`,
   )
   .join('\n')}
 ---
@@ -245,7 +292,7 @@ spec:
   const subflowBullets = artifacts
     .map(
       (artifact) =>
-        `- \`${subflowKey(artifact)}\` — ${artifact.source === 'document' ? 'your sub-flow document' : 'canonical AI contract stub (replace after customizing)'}`,
+        `- \`${subflowPath(artifact)}\` — ${artifact.source === 'document' ? 'your sub-flow document' : 'canonical AI contract stub (replace after customizing)'}`,
     )
     .join('\n');
 
