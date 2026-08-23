@@ -601,3 +601,42 @@ test('canvas zoom responds to Ctrl+= and the mini-map toggles from the palette',
   await page.keyboard.press('Enter');
   await expect(page.locator('.react-flow__minimap')).toHaveCount(0);
 });
+
+// ---------------------------------------------------------------------------
+// Task 34: duplicate Workflows-sidebar row for the active unsaved tab
+// ---------------------------------------------------------------------------
+
+test('new blank workflow shows exactly one sidebar row after editing (Task 34)', async ({ page }) => {
+  const consoleErrors = [];
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') consoleErrors.push(msg.text());
+  });
+
+  const library = page.getByRole('listbox', { name: 'Saved workflows' });
+  await page.getByLabel('New workflow tab').click();
+  await expect(page.locator('.document-tab')).toHaveCount(2);
+  // The unsaved blank tab is the active row — listed exactly once.
+  await expect(library.locator('.library-item', { hasText: 'new-workflow' })).toHaveCount(1);
+  await expect(library.locator('.library-item[aria-selected="true"]')).toHaveCount(1);
+
+  // Editing forces the tab snapshot to be stashed into tabDocumentsRef.
+  await page.keyboard.press('Control+Shift+P');
+  const dialog = page.getByRole('dialog', { name: 'Command palette' });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.type('Add Wait task');
+  await page.keyboard.press('Enter');
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole('group', { name: 'wait task waitTask' })).toBeVisible({ timeout: 8000 });
+
+  // Switch away to a saved workflow and back — the original repro collapsed
+  // into two identical rows for the active unsaved tab + React key errors.
+  await library.locator('.library-item', { hasText: 'rta-vehicle-ownership-renewal' }).click();
+  await expect(page.locator('.workflow-name-input')).toHaveValue('rta-vehicle-ownership-renewal');
+  await library.locator('.library-item').first().waitFor();
+  await library.locator('.library-item', { hasText: 'new-workflow' }).click();
+  await expect(page.locator('.workflow-name-input')).toHaveValue('new-workflow');
+
+  await expect(library.locator('.library-item', { hasText: 'new-workflow' })).toHaveCount(1);
+  await expect(library.locator('.library-item[aria-selected="true"]')).toHaveCount(1);
+  expect(consoleErrors.filter((text) => /same key/i.test(text))).toEqual([]);
+});

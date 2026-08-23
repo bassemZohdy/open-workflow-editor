@@ -34,6 +34,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- **Duplicate Workflows-sidebar row for the active unsaved tab:** after creating a blank workflow, editing it, then switching away and back, the explorer rendered the same workflow twice with React key collisions (`Encountered two children with the same key`). `libraryRows` in `main.tsx` is now the pure, unit-tested `workflowStore.buildLibraryRows` — rows are folded into a `Map` keyed by id (saved records win over stashed tab snapshots, which win over the active-tab fallback) so every id renders exactly once. (Task 34)
+- Tests: suite now **80 unit / 64 E2E (parallel)**.
+
 - **Canvas graph completeness (root cause of the Task 24/27 divergence):** the SDK semantic graph silently omitted top-level tasks that stand disconnected mid-list, so duplicated/de-then'ed tasks existed in the document but never rendered on the canvas. `createFlowGraph` now appends any missing top-level document tasks, and `duplicateTopLevelTask` appends copies at the end of the `do` list (same as palette adds). Unit-tested. (Tasks 24/27)
 - `reuseExistingServer: !process.env.CI` — CI always boots a fresh dev server, avoiding stale-server contamination in parallel runs.
 

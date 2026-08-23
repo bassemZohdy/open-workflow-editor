@@ -45,6 +45,7 @@ import {
   reorderWorkflowIds,
   uniqueWorkflowName,
   upsertWorkflowRecord,
+  buildLibraryRows,
 } from './workflowStore';
 import { formatError, formatGraphIssues, validationTitle, collectSpecDiagnostics } from './formatters';
 import type { SpecDiagnostic } from './formatters';
@@ -819,46 +820,19 @@ function App() {
     });
   };
 
-  const libraryRows = useMemo<LibraryWorkflowRow[]>(() => {
-    const rows: LibraryWorkflowRow[] = [];
-    const seen = new Set<string>();
-    workflowRecords.forEach((record) => {
-      seen.add(record.id);
-      rows.push({
-        id: record.id,
-        name: record.name,
-        isActive: record.id === workflowId,
-        isDirty: record.id === workflowId && dirty,
-        isSaved: true,
-      });
-    });
-    tabDocumentsRef.current.forEach((memory) => {
-      if (seen.has(memory.id)) return;
-      rows.push({
-        id: memory.id,
-        name: memory.name,
-        isActive: memory.id === workflowId,
-        isDirty: memory.dirty,
-        isSaved: false,
-      });
-    });
-    if (!seen.has(workflowId)) {
-      rows.push({ id: workflowId, name: workflowName, isActive: true, isDirty: dirty, isSaved: false });
-    }
-    // Respect the user's drag-reordered library order; unknown ids (new or
-    // unsaved workflows) fall back to alphabetical after the known ones.
-    const orderIndex = new Map(libraryOrder.map((id, index) => [id, index]));
-    rows.sort((a, b) => {
-      const aIndex = orderIndex.get(a.id);
-      const bIndex = orderIndex.get(b.id);
-      if (aIndex === undefined && bIndex === undefined) return a.name.localeCompare(b.name);
-      if (aIndex === undefined) return 1;
-      if (bIndex === undefined) return -1;
-      return aIndex - bIndex;
-    });
-    return rows;
+  const libraryRows = useMemo<LibraryWorkflowRow[]>(
+    () =>
+      buildLibraryRows(
+        workflowRecords,
+        [...tabDocumentsRef.current.values()],
+        workflowId,
+        workflowName,
+        dirty,
+        libraryOrder,
+      ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workflowRecords, workflowId, workflowName, dirty, openTabIds, libraryOrder]);
+    [workflowRecords, workflowId, workflowName, dirty, openTabIds, libraryOrder],
+  );
 
   const handleReorderWorkflows = (draggedId: string, overId: string) => {
     if (draggedId === overId) return;

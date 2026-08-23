@@ -14,6 +14,7 @@ import {
 } from '../server/javascriptSandbox';
 import { createRuntimeGatewayHandler } from '../server/runtimeGatewayHandler';
 import {
+  buildLibraryRows,
   createWorkflowRecord,
   createWorkflowPersistence,
   assertWorkflowPersistence,
@@ -1314,5 +1315,80 @@ describe('demo engine AI delegation (Task 33)', () => {
       { agentResult?: string; steps?: unknown[] } | undefined;
     expect(agentContext?.agentResult).toContain('[mock-agent] Resolve the ticket');
     expect(agentContext?.steps).toHaveLength(2);
+  });
+});
+
+describe('buildLibraryRows (Task 34 — duplicate sidebar row)', () => {
+  const saved = createWorkflowRecord({
+    id: 'wf-saved',
+    document: { document: { name: 'Saved Flow' } },
+    specification: '',
+  });
+
+  it('yields exactly one row when the active unsaved tab is stashed in tabDocuments', () => {
+    const rows = buildLibraryRows(
+      [],
+      [{ id: 'wf-new', name: 'New Flow', dirty: true }],
+      'wf-new',
+      'New Flow',
+      true,
+      [],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      id: 'wf-new',
+      name: 'New Flow',
+      isActive: true,
+      isDirty: true,
+      isSaved: false,
+    });
+    expect(new Set(rows.map((row) => row.id)).size).toBe(rows.length);
+  });
+
+  it('skips stashed snapshots that belong to saved records (single row wins)', () => {
+    const rows = buildLibraryRows(
+      [saved],
+      [{ id: 'wf-saved', name: 'Stale Stash', dirty: true }],
+      'wf-saved',
+      'Saved Flow',
+      true,
+      [],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ id: 'wf-saved', name: 'Saved Flow', isDirty: true, isSaved: true });
+  });
+
+  it('keeps every stashed unsaved tab plus the active fallback as unique rows', () => {
+    const rows = buildLibraryRows(
+      [],
+      [
+        { id: 'tab-a', name: 'Alpha', dirty: false },
+        { id: 'tab-b', name: 'Beta', dirty: true },
+      ],
+      'tab-c',
+      'Gamma',
+      true,
+      [],
+    );
+    expect(rows.map((row) => row.id)).toEqual(['tab-a', 'tab-b', 'tab-c']);
+    expect(new Set(rows.map((row) => row.id)).size).toBe(rows.length);
+  });
+
+  it('respects the persisted drag order and falls back to alphabetical for unknown ids', () => {
+    const rows = buildLibraryRows(
+      [
+        saved,
+        createWorkflowRecord({ id: 'wf-z', document: { document: { name: 'Zed' } }, specification: '' }),
+      ],
+      [],
+      'wf-new',
+      'New Flow',
+      false,
+      ['wf-z'],
+    );
+    expect(rows.map((row) => row.id)).toEqual(['wf-z', 'wf-new', 'wf-saved']);
+    expect(rows[0]).toMatchObject({ id: 'wf-z', isSaved: true });
+    expect(rows[1]).toMatchObject({ id: 'wf-new', isActive: true, isSaved: false });
+    expect(rows[2]).toMatchObject({ id: 'wf-saved', isSaved: true });
   });
 });

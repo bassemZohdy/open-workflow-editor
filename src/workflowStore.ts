@@ -167,6 +167,83 @@ export function reorderWorkflowIds(ids: string[], draggedId: string, overId: str
   return next;
 }
 
+export interface LibraryRow {
+  id: string;
+  name: string;
+  isActive: boolean;
+  isDirty: boolean;
+  /** True when the workflow exists in the saved library (not just an open tab). */
+  isSaved: boolean;
+}
+
+export interface TabDocumentSnapshot {
+  id: string;
+  name: string;
+  dirty: boolean;
+}
+
+/**
+ * Build the Workflows-sidebar rows from the saved library and any open
+ * in-memory tab documents. Every id yields exactly one row — saved records win
+ * over stashed tab snapshots, which win over the active-tab fallback — keeping
+ * React keys unique even when the active unsaved tab has been stashed into
+ * `tabDocumentsRef` (previously duplicated rows + `Encountered two children
+ * with the same key` errors; Task 34).
+ */
+export function buildLibraryRows(
+  records: WorkflowRecord[],
+  tabDocuments: readonly TabDocumentSnapshot[],
+  activeId: string,
+  activeName: string,
+  activeDirty: boolean,
+  order: readonly string[],
+): LibraryRow[] {
+  const rowsById = new Map<string, LibraryRow>();
+
+  records.forEach((record) => {
+    rowsById.set(record.id, {
+      id: record.id,
+      name: record.name,
+      isActive: record.id === activeId,
+      isDirty: record.id === activeId && activeDirty,
+      isSaved: true,
+    });
+  });
+
+  tabDocuments.forEach((memory) => {
+    if (rowsById.has(memory.id)) return;
+    rowsById.set(memory.id, {
+      id: memory.id,
+      name: memory.name,
+      isActive: memory.id === activeId,
+      isDirty: memory.dirty,
+      isSaved: false,
+    });
+  });
+
+  if (!rowsById.has(activeId)) {
+    rowsById.set(activeId, {
+      id: activeId,
+      name: activeName,
+      isActive: true,
+      isDirty: activeDirty,
+      isSaved: false,
+    });
+  }
+
+  // Respect the user's drag-reordered library order; unknown ids (new or
+  // unsaved workflows) fall back to alphabetical after the known ones.
+  const orderIndex = new Map(order.map((id, index) => [id, index]));
+  return [...rowsById.values()].sort((a, b) => {
+    const aIndex = orderIndex.get(a.id);
+    const bIndex = orderIndex.get(b.id);
+    if (aIndex === undefined && bIndex === undefined) return a.name.localeCompare(b.name);
+    if (aIndex === undefined) return 1;
+    if (bIndex === undefined) return -1;
+    return aIndex - bIndex;
+  });
+}
+
 export function uniqueWorkflowName(workflows: WorkflowRecord[], baseName: string): string {
   const names = new Set(workflows.map((record) => record.name));
   if (!names.has(baseName)) return baseName;

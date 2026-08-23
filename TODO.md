@@ -11,7 +11,11 @@ Build a real, production-ready "VS Code for Open Workflow Specifications": a bro
 
 ## Open Task Board
 
-All tracked tasks are closed ✓ — see the Archive below. Task 16 was implemented via valid-DSL composition (sub-flow delegation + catalog-backed providers, per `docs/ai-tasks.md`) instead of waiting for native DSL keys; the native types remain a future option.
+| #   | Task                                                           | Status | Notes                                                                                                                                                                                                                                                                                                    |
+| --- | -------------------------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 34  | Fix duplicate Workflows-sidebar row for the active unsaved tab | `[x]`  | FIXED: extracted `libraryRows` into pure `workflowStore.buildLibraryRows` — rows fold into a `Map` keyed by id (records win, then stashed tabs, then active fallback) so every id renders exactly once; 4 unit tests + 1 E2E regression (create → edit → switch away → back). See Review findings below. |
+
+Task 16 was implemented via valid-DSL composition (sub-flow delegation + catalog-backed providers, per `docs/ai-tasks.md`) instead of waiting for native DSL keys; the native types remain a future option.
 
 **Next candidates:** point `aiProviderBridge.js` at a real provider (env `AI_PROVIDER_API_KEY`; the gateway serves `POST /ai/chat` + `POST /ai/agent` with auth/rate-limit/audit — see `docs/ai-tasks.md`); revisit native `llm-call`/`ai-agent-call` task keys if the Open Workflow spec adds them; enable branch protection in GitHub settings (see `CONTRIBUTING.md`).
 
@@ -44,11 +48,21 @@ Findings from the full-app browser review (all against a clean dev server):
 
 ---
 
+## Review findings — 2026-08-23 browser pass
+
+Live dev-server review (Task 33's demo-engine AI delegation fix, since committed, plus a general click-through of the AI task flow):
+
+- **Verified:** the (now-committed) `demoRuntime.ts` AI delegation fix works end-to-end. Added an `LLM call` task via the command palette on a fresh workflow, ran it against the demo engine, and the execution log showed `Executed LLM sub-flow aiLlmTask · target=ai/prompt-llm@0.1.0 model=default-model` followed by `Completed task aiLlmTask` — confirming the sub-flow's mock output now lands in `run.context[<task>]` so parent `$context.<task>.llmResult` mappings resolve.
+- **New bug — FIXED (Task 34): duplicate Workflows-sidebar row for the active unsaved tab.** Repro: create a new blank workflow, add any task, then switch away to a saved workflow and back — the sidebar renders **two** identical rows for the same document (same name, same rename target, both toggle "active") and the console throws repeated React errors: `Encountered two children with the same key … <uuid>`. Root cause confirmed: `libraryRows` in `src/main.tsx` folded three row sources (saved records → `tabDocumentsRef` snapshots → active-tab fallback) without ever adding `memory.id` to the `seen` `Set`, so once the active unsaved tab was stashed into `tabDocumentsRef`, both the loop and the fallback pushed a row for the same `workflowId`. (The simple "add a task, no tab switch" path never recomputed the memo — a new workflow is already `dirty` from creation, so that path was a red herring.)
+- **Fix:** extracted the fold into pure `workflowStore.buildLibraryRows` — rows collapse into a single `Map<id, row>` (saved records win, then stashed tabs, then the active fallback), guaranteeing exactly one row per id regardless of source order; the `libraryOrder` sort is applied to the deduped values. 4 unit tests (stashed active tab, record-vs-stash precedence, multi-tab uniqueness, order fallback) + 1 E2E regression test (create → edit → switch away → back: one row, no same-key console errors).
+
+---
+
 ## Verification Commands
 
 ```bash
-npm test             # Vitest unit tests (76)
-npm run test:browser # Playwright E2E tests (63, parallel workers)
+npm test             # Vitest unit tests (80)
+npm run test:browser # Playwright E2E tests (64, parallel workers)
 npm run typecheck    # tsc --noEmit
 npm run lint         # ESLint
 npm run format:check # Prettier
@@ -60,8 +74,8 @@ npm run build        # Production build
 - [x] `npm run typecheck` — clean.
 - [x] `npm run lint` — clean.
 - [x] `npm run format:check` — clean.
-- [x] `npm test` — **76 unit tests pass** (13 in `src/ideParity.test.ts`, +4 breadcrumb +2 reorder, +4 Task 16 AI builders, +5 gateway AI endpoints, +2 demo AI delegation).
-- [x] `npm run test:browser` — **63 Playwright E2E tests pass** (parallel workers; Task 24 fixes landed).
+- [x] `npm test` — **80 unit tests pass** (13 in `src/ideParity.test.ts`, +4 breadcrumb +2 reorder, +4 Task 16 AI builders, +5 gateway AI endpoints, +2 demo AI delegation, +4 Task 34 `buildLibraryRows`).
+- [x] `npm run test:browser` — **64 Playwright E2E tests pass** (parallel workers; +1 Task 34 regression).
 - [x] `npm run build` — production bundle builds.
 
 ---
@@ -94,6 +108,7 @@ npm run build        # Production build
 | 31  | TODO.md self-consistency cleanup                     | Stale `## Planned: AI task families (design phase)` heading removed; verification sections refreshed (76 unit / 63 E2E parallel); scheduler comments cleaned                                                                                      |
 | 32  | Gateway AI endpoints (`POST /ai/chat`, `/ai/agent`)  | `runtimeGatewayHandler` now serves both through `aiProviderBridge` — same auth/rate-limit/audit envelope as the runtime routes; 503 when unconfigured, 502 on provider errors; 5 unit tests (incl. audit entries)                                 |
 | 33  | Demo engine executes AI delegation sub-flows         | `run.workflow` → `ai` namespace runs with contract-shaped results (`llmResult`/`agentResult`, prompt vs goal precedence); delegation outputs merge into context under the task name so `$context.<task>.llmResult` mapping resolves; 2 unit tests |
+| 34  | Duplicate sidebar row for the active unsaved tab     | `libraryRows` extracted into pure `workflowStore.buildLibraryRows`: `Map<id, row>` fold (records win, then stashed tabs, then active fallback) → exactly one row per id; 4 unit tests + 1 E2E regression (create → edit → switch away → back)     |
 
 ### VS Code parity round 1 (Tasks 1–9)
 
