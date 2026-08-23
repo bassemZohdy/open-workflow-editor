@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { generateDeploymentBundle, type DeploymentBundle } from '../../deploymentBundle';
+import { generateDeploymentBundle, subflowKey, type DeploymentBundle } from '../../deploymentBundle';
 import type { WorkflowDocument } from '../../types';
 
 export interface DeploymentBundleDialogProps {
@@ -11,7 +11,7 @@ export interface DeploymentBundleDialogProps {
   availableDocuments?: WorkflowDocument[];
 }
 
-type FileTabKey = 'workflow.yaml' | 'Dockerfile' | 'deployment.yaml' | 'README.md';
+const MAIN_FILE_TABS = ['deployment.yaml', 'Dockerfile', 'workflow.yaml', 'README.md'] as const;
 
 export function DeploymentBundleDialog({
   open,
@@ -20,7 +20,7 @@ export function DeploymentBundleDialog({
   workflowName,
   availableDocuments = [],
 }: DeploymentBundleDialogProps) {
-  const [activeTab, setActiveTab] = useState<FileTabKey>('deployment.yaml');
+  const [activeTab, setActiveTab] = useState<string>('deployment.yaml');
   const [copyNotice, setCopyNotice] = useState('');
 
   const bundle: DeploymentBundle = useMemo(
@@ -30,8 +30,17 @@ export function DeploymentBundleDialog({
 
   if (!open) return null;
 
-  const currentContent =
-    activeTab === 'workflow.yaml'
+  /**
+   * Shipped sub-flow artifacts get their own preview tabs so they can be
+   * inspected, copied and downloaded individually (not only embedded in the
+   * ConfigMap / Dockerfile).
+   */
+  const subflowTabs = bundle.subflows.map((artifact) => subflowKey(artifact));
+  const fileTabs = [...MAIN_FILE_TABS.slice(0, 3), ...subflowTabs, MAIN_FILE_TABS[3]];
+
+  const currentContent = subflowTabs.includes(activeTab)
+    ? (bundle.subflows.find((artifact) => subflowKey(artifact) === activeTab)?.yaml ?? '')
+    : activeTab === 'workflow.yaml'
       ? bundle.workflowYaml
       : activeTab === 'Dockerfile'
         ? bundle.dockerfile
@@ -55,7 +64,8 @@ export function DeploymentBundleDialog({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = activeTab;
+    // Slashes are not portable in download file names.
+    a.download = activeTab.replace(/\//g, '_');
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -101,29 +111,27 @@ export function DeploymentBundleDialog({
             gap: 8,
           }}
         >
-          <div style={{ display: 'flex', gap: 4 }}>
-            {(['deployment.yaml', 'Dockerfile', 'workflow.yaml', 'README.md'] as FileTabKey[]).map(
-              (fileKey) => (
-                <button
-                  key={fileKey}
-                  type="button"
-                  onClick={() => setActiveTab(fileKey)}
-                  style={{
-                    padding: '4px 10px',
-                    borderRadius: 4,
-                    fontSize: 11,
-                    fontWeight: activeTab === fileKey ? 600 : 400,
-                    background: activeTab === fileKey ? 'var(--bg-card)' : 'transparent',
-                    color: activeTab === fileKey ? 'var(--ink)' : 'var(--muted)',
-                    border: '1px solid',
-                    borderColor: activeTab === fileKey ? 'var(--line)' : 'transparent',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {fileKey}
-                </button>
-              ),
-            )}
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+            {fileTabs.map((fileKey) => (
+              <button
+                key={fileKey}
+                type="button"
+                onClick={() => setActiveTab(fileKey)}
+                style={{
+                  padding: '4px 10px',
+                  borderRadius: 4,
+                  fontSize: 11,
+                  fontWeight: activeTab === fileKey ? 600 : 400,
+                  background: activeTab === fileKey ? 'var(--bg-card)' : 'transparent',
+                  color: activeTab === fileKey ? 'var(--ink)' : 'var(--muted)',
+                  border: '1px solid',
+                  borderColor: activeTab === fileKey ? 'var(--line)' : 'transparent',
+                  cursor: 'pointer',
+                }}
+              >
+                {fileKey}
+              </button>
+            ))}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {copyNotice && (

@@ -94,7 +94,8 @@ const indentYaml = (yaml: string): string =>
     .map((line) => (line.trim() ? `    ${line}` : line))
     .join('\n');
 
-const subflowKey = (target: SubflowTarget): string => `subflows/${target.namespace}/${target.name}.yaml`;
+export const subflowKey = (target: SubflowTarget): string =>
+  `subflows/${target.namespace}/${target.name}.yaml`;
 const subflowMount = (target: SubflowTarget): string =>
   `/app/subflows/${target.namespace}/${target.name}.yaml`;
 

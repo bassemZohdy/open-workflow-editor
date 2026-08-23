@@ -35,6 +35,11 @@ test('deployment bundle ships AI sub-flow artifacts for AI delegations', async (
   await expect(page.locator('pre')).toContainText('subflows/ai/prompt-llm.yaml: |');
   await expect(page.locator('pre')).toContainText('subPath: subflows/ai/prompt-llm.yaml');
 
+  // Shipped sub-flow artifacts preview in their own tab.
+  await page.getByRole('button', { name: 'subflows/ai/prompt-llm.yaml', exact: true }).click();
+  await expect(page.locator('pre')).toContainText('ai-providers');
+  await expect(page.getByRole('button', { name: /^📋 Copy subflows\/ai\/prompt-llm\.yaml$/ })).toBeVisible();
+
   await page.getByRole('button', { name: 'README.md', exact: true }).click();
   await expect(page.locator('pre')).toContainText('Sub-flows');
 });
@@ -61,6 +66,10 @@ test('deployment bundle ships a scaffolded user sub-flow document', async ({ pag
   await page.getByRole('button', { name: 'deployment.yaml', exact: true }).click();
   await expect(page.locator('pre')).toContainText('subflows/');
   await expect(page.locator('pre')).toContainText('billing-process.yaml: |');
+  await expect(page.locator('pre')).toContainText('subflowReady: true');
+
+  // The user sub-flow artifact previews in its own tab (Task 44).
+  await page.getByRole('button', { name: /subflows\/.*billing-process\.yaml/ }).click();
   await expect(page.locator('pre')).toContainText('subflowReady: true');
 });
 
