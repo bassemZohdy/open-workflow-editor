@@ -37,7 +37,7 @@ npm install
 npm run dev
 ```
 
-Open the local Vite URL (`http://localhost:5173` or `http://127.0.0.1:4174`). Contributing guidelines, the Git workflow (protected `main` + `develop`/PR flow) and the required checks are in [`CONTRIBUTING.md`](CONTRIBUTING.md).
+Open the local Vite URL (`http://localhost:5173` or `http://127.0.0.1:4174`). Contributing guidelines, the Git workflow (trunk-based: protected `main` + PR flow) and the required checks are in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 The Vite development server exposes the Node sandbox at `POST /api/sandbox/javascript`. To run the standalone gateway service:
 
