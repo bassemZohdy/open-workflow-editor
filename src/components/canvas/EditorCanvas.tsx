@@ -336,35 +336,56 @@ export function EditorCanvas({
   }, [nodes, selectedId]);
 
   // React Flow v12 quirk: a Ctrl/Cmd-held press on a node never reaches
-  // `onNodeClick` — d3-drag's filter drops ctrl/meta mousedowns and the
-  // pane's box-selection gesture swallows the click — so modifier-click
-  // multi-selection would be dead. Nodes are controlled state here, so the
-  // additive toggle is applied directly in the capture phase instead (Shift
-  // keeps React Flow's native path, which its drag filter does not block).
+  // `onNodeClick` on macOS (d3-drag's filter drops ctrl/meta mousedowns and
+  // the pane's box-selection gesture swallows the click) — while on Linux
+  // headless the CLICK event DOES reach React Flow's NodeWrapper handler with
+  // `multiSelectionActive=false`, which REPLACE-selects and destroys the
+  // additive toggle. Nodes are controlled state here, so the toggle is applied
+  // directly in the capture phase and BOTH the mousedown and the resulting
+  // click are isolated from React Flow (Shift keeps the native path, which
+  // works on both platforms).
   const canvasHostRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const host = canvasHostRef.current;
     if (!host) return;
-    const onMouseDownCapture = (event: MouseEvent) => {
-      if (event.button !== 0) return;
-      if (!event.ctrlKey && !event.metaKey) return;
+    const taskNodeId = (event: MouseEvent): string | null => {
       const nodeElement = (event.target as HTMLElement | null)?.closest?.(
         '.react-flow__node-task',
       ) as HTMLElement | null;
       const nodeId = nodeElement?.getAttribute('data-id');
-      if (!nodeElement || !nodeId) return;
+      return nodeElement && nodeId ? nodeId : null;
+    };
+    const isModifierLeftPress = (event: MouseEvent): boolean =>
+      event.button === 0 && (event.ctrlKey || event.metaKey);
+    const onMouseDownCapture = (event: MouseEvent) => {
+      if (!isModifierLeftPress(event)) return;
+      const nodeId = taskNodeId(event);
+      if (!nodeId) return;
       // Keep the pane's modifier box-selection gesture from claiming the press.
       event.stopPropagation();
       setNodes((current) => {
         const wasSelected = current.some(
           (node) => node.id === nodeId && (node as unknown as { selected?: boolean }).selected,
         );
-        if (!wasSelected && nodeId === selectedId) setSelectedId(null);
+        if (wasSelected && nodeId === selectedId) setSelectedId(null);
+        if (!wasSelected) setSelectedId(nodeId);
         return current.map((node) => (node.id === nodeId ? { ...node, selected: !wasSelected } : node));
       });
     };
+    const onClickCapture = (event: MouseEvent) => {
+      if (!isModifierLeftPress(event)) return;
+      if (!taskNodeId(event)) return;
+      // The click is a separate event: stopping the mousedown does not stop
+      // it. Without this, React Flow's click path replace-selects on
+      // platforms where it fires (Linux headless), wiping the toggle above.
+      event.stopPropagation();
+    };
     host.addEventListener('mousedown', onMouseDownCapture, true);
-    return () => host.removeEventListener('mousedown', onMouseDownCapture, true);
+    host.addEventListener('click', onClickCapture, true);
+    return () => {
+      host.removeEventListener('mousedown', onMouseDownCapture, true);
+      host.removeEventListener('click', onClickCapture, true);
+    };
   }, [selectedId, setNodes]);
 
   const handleAlign = useCallback(
