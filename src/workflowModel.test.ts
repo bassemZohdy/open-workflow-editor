@@ -1258,3 +1258,61 @@ describe('gateway AI provider endpoints (Task 32)', () => {
     expect(chatEntries[0].aiKind).toBe('chat');
   });
 });
+
+describe('demo engine AI delegation (Task 33)', () => {
+  async function runToCompletion(
+    runtime: ReturnType<typeof createDemoRuntimeAdapter>,
+    workflow: WorkflowDocument,
+  ) {
+    const started = (await runtime.start(workflow, {
+      prompt: 'Draft a summary',
+      goal: 'Resolve the ticket',
+      model: 'demo-model',
+    })) as { runId: string };
+    let status = (await runtime.status(started.runId)) as {
+      status: string;
+      output?: Record<string, unknown>;
+      tasks: Array<{ name: string; type: string }>;
+    };
+    for (let attempt = 0; attempt < 30 && status.status === 'running'; attempt += 1) {
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 0));
+      status = (await runtime.status(started.runId)) as {
+        status: string;
+        output?: Record<string, unknown>;
+        tasks: Array<{ name: string; type: string }>;
+      };
+    }
+    return status;
+  }
+
+  it('executes an AI delegation task with the LLM sub-flow contract', async () => {
+    const runtime = createDemoRuntimeAdapter({ stepDelay: 0 });
+    let workflow = parseWorkflow(NEW_WORKFLOW).document;
+    workflow = addTopLevelAiTask(workflow, 'llm-call');
+    workflow = {
+      ...workflow,
+      do: [...(workflow.do || []), { mapResult: { set: { summary: '${ $context.aiLlmTask.llmResult }' } } }],
+    };
+
+    const status = await runToCompletion(runtime, workflow);
+    expect(status.status).toBe('completed');
+    expect(status.tasks.map((task) => task.name)).toEqual(['aiLlmTask', 'mapResult']);
+    const llmContext = status.output?.['aiLlmTask'] as { llmResult?: string; model?: string } | undefined;
+    expect(llmContext?.llmResult).toContain('[mock-llm] Draft a summary');
+    expect(llmContext?.model).toBe('demo-model');
+    expect(status.output?.['summary']).toContain('[mock-llm]');
+  });
+
+  it('executes an AI agent delegation task with the agent contract', async () => {
+    const runtime = createDemoRuntimeAdapter({ stepDelay: 0 });
+    let workflow = parseWorkflow(NEW_WORKFLOW).document;
+    workflow = addTopLevelAiTask(workflow, 'ai-agent-call');
+
+    const status = await runToCompletion(runtime, workflow);
+    expect(status.status).toBe('completed');
+    const agentContext = status.output?.['aiAgentTask'] as
+      { agentResult?: string; steps?: unknown[] } | undefined;
+    expect(agentContext?.agentResult).toContain('[mock-agent] Resolve the ticket');
+    expect(agentContext?.steps).toHaveLength(2);
+  });
+});

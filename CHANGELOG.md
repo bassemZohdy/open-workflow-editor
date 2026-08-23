@@ -29,7 +29,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Runnable contract stubs (`AI_LLM_SCRIPT`, `AI_AGENT_SCRIPT`) + server-side reference bridge `server/aiProviderBridge.js` (validation, server-only keys, 64 KiB limits).
 - `AiTaskCard` inspector card, magenta AI node styling (`ai: <subflow>`), `ai-orchestration` catalog template.
 - **Gateway AI endpoints** (`POST /ai/chat`, `POST /ai/agent`) on the runtime gateway — provider bridge with the same auth/rate-limit/audit envelope; `503` unconfigured / `502` provider error / `400` invalid payload. (Task 32)
-- Tests: 4 unit + 2 E2E; suite now **74 unit / 63 E2E (parallel)**.
+- **Demo engine executes AI delegation sub-flows** (`run.workflow` → `ai` namespace): contract-shaped results (`llmResult`/`agentResult`, prompt/goal precedence) and delegation outputs merged into context under the task name, so parent mapping steps resolve end-to-end. (Task 33)
+- Tests: suite now **76 unit / 63 E2E (parallel)**.
 
 ### Fixed
 

@@ -190,6 +190,11 @@ async function executeTaskList(taskList: TaskItem[] | undefined, run: DemoRun, s
     try {
       await pause(run.stepDelay);
       const result = await executeTask(name, definition, run, scope);
+      // Sub-flow delegation outputs become the task's context value, so
+      // parent mapping references (`$context.<task>.field`) resolve.
+      if (definition.run?.workflow && result.output && typeof result.output === 'object') {
+        run.context[name] = clone(result.output);
+      }
       progress.status = 'completed';
       progress.output = clone(result.output);
       progress.next = result.next;
@@ -344,6 +349,39 @@ async function executeTask(
   }
   if (definition.run?.workflow) {
     const subflow = definition.run.workflow;
+    // AI delegation: simulate the catalog-backed sub-flow contract so the
+    // parent's mapping steps (`$context.<task>.llmResult`) resolve end-to-end.
+    if (subflow.namespace === 'ai') {
+      const isAgent = subflow.name === 'ai-agent';
+      // LLM sub-flows read the prompt first; agent sub-flows read the goal first.
+      const sourceValue = isAgent
+        ? (run.input.goal ?? run.input.prompt ?? run.context?.goal ?? run.context?.prompt ?? '')
+        : (run.input.prompt ?? run.context?.prompt ?? run.input.goal ?? run.context?.goal ?? '');
+      const source = String(sourceValue ?? '');
+      const target = `${subflow.namespace}/${subflow.name}@${subflow.version}`;
+      if (isAgent) {
+        const steps = ['search', 'compute'].map((tool) => ({ tool, status: 'ok' }));
+        addLog(run, `Executed AI agent sub-flow ${scope}${name}`, {
+          target,
+          steps: steps.length,
+        });
+        return {
+          output: { demo: true, agentResult: `[mock-agent] ${source.slice(0, 140)}`, steps },
+          next: definition.then,
+        };
+      }
+      const model = String(run.input.model || 'default-model');
+      addLog(run, `Executed LLM sub-flow ${scope}${name}`, { target, model });
+      return {
+        output: {
+          demo: true,
+          llmResult: `[mock-llm] ${source.slice(0, 160)}`,
+          model,
+          usage: { inputTokens: source.length, outputTokens: 24 },
+        },
+        next: definition.then,
+      };
+    }
     addLog(run, `Simulated sub-flow ${scope}${name}`, {
       target: `${subflow.namespace}/${subflow.name}@${subflow.version}`,
     });
