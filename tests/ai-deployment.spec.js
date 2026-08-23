@@ -127,6 +127,7 @@ test('problems panel flags an unresolved sub-flow target and selects its task', 
   await page.keyboard.press('Control+Shift+M');
   const panel = page.locator('.problems-panel');
   await expect(panel).toHaveClass(/open/);
+  await expect(panel).toContainText('Sub-flow references');
   await expect(panel).toContainText('billing-process');
   await expect(panel).toContainText('has no document in the workspace');
 

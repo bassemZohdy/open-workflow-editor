@@ -93,8 +93,22 @@ export function ProblemsPanel({ open, onToggle, items, onClear, docked = true }:
             ) : (
               Object.values(grouped).map((kindItems) => {
                 const first = kindItems[0];
-                const label = first.kind === 'schema' ? 'Schema' : first.kind === 'graph' ? 'Graph' : 'Task';
-                const icon = first.kind === 'schema' ? 'ƒ?' : first.kind === 'graph' ? '⌬' : '·';
+                const label =
+                  first.kind === 'schema'
+                    ? 'Schema'
+                    : first.kind === 'graph'
+                      ? 'Graph'
+                      : first.kind === 'subflow'
+                        ? 'Sub-flow references'
+                        : 'Task';
+                const icon =
+                  first.kind === 'schema'
+                    ? 'ƒ?'
+                    : first.kind === 'graph'
+                      ? '⌬'
+                      : first.kind === 'subflow'
+                        ? '⇄'
+                        : '·';
                 return renderList(kindItems, label, icon);
               })
             )}
