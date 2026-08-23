@@ -1986,6 +1986,12 @@ do:
         path: issue.path,
         severity: 'warning',
         kind: 'subflow',
+        action: issue.subflowTarget
+          ? {
+              label: 'Scaffold',
+              onAction: () => handleOpenSubflow(issue.subflowTarget!.name, issue.subflowTarget!.namespace),
+            }
+          : undefined,
         onSelect: () => {
           setView('canvas');
           setSelectedId(targetId);

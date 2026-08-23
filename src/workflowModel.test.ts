@@ -1809,6 +1809,7 @@ do:
     expect(issues).toHaveLength(1);
     expect(issues[0].path).toBe('/do/callBilling');
     expect(issues[0].message).toContain('billing/billing-process');
+    expect(issues[0].subflowTarget).toEqual({ namespace: 'billing', name: 'billing-process' });
   });
 
   it('exempts provided documents and canonical AI contracts', () => {

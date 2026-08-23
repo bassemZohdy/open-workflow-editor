@@ -8,6 +8,8 @@ export interface ProblemItem {
   kind: 'task' | 'schema' | 'graph' | 'subflow';
   /** Line (0-based) when the problem can be located inside the specification. */
   line?: number;
+  /** Optional quick action rendered inside the item (e.g. 'Scaffold'). */
+  action?: { label: string; onAction: () => void };
   onSelect: () => void;
 }
 
@@ -57,6 +59,19 @@ export function ProblemsPanel({ open, onToggle, items, onClear, docked = true }:
           </span>
           <span className="problems-message">{item.message}</span>
           <span className="problems-path">{item.path}</span>
+          {item.action && (
+            <button
+              type="button"
+              className="problems-item-action"
+              aria-label={item.action.label}
+              onClick={(event) => {
+                event.stopPropagation();
+                item.action?.onAction();
+              }}
+            >
+              {item.action.label}
+            </button>
+          )}
         </button>
       ))}
     </div>

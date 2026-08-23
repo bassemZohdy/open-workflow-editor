@@ -1102,6 +1102,7 @@ export function detectMissingSubflowReferences(
       issues.push({
         path: `/do/${reference.topLevelName}`,
         message: `Sub-flow target “${reference.namespace}/${reference.name}” has no document in the workspace. Open or scaffold it before deploying.`,
+        subflowTarget: { namespace: reference.namespace, name: reference.name },
       });
     }
   }

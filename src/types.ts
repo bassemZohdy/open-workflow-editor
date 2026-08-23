@@ -188,6 +188,8 @@ export interface FlowGraph {
 export interface GraphIssue {
   path: string;
   message: string;
+  /** Set on unresolved sub-flow reference issues — the delegating target. */
+  subflowTarget?: { namespace: string; name: string };
 }
 
 /** A saved revision snapshot of a workflow specification. */

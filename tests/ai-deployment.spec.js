@@ -135,6 +135,13 @@ test('problems panel flags an unresolved sub-flow target and selects its task', 
   await panel.locator('.problems-item').filter({ hasText: 'billing-process' }).click();
   await expect(page.getByLabel('Run mode')).toBeVisible();
   await expect(page.getByLabel('Sub-flow name', { exact: true })).toHaveValue('billing-process');
+
+  // The Scaffold action opens the sub-flow document; the warning resolves.
+  await panel.getByRole('button', { name: 'Scaffold', exact: true }).click();
+  await expect(page.locator('.workflow-name-input')).toHaveValue('billing-process');
+  await expect(page.locator('.document-tab')).toHaveCount(2);
+  await page.locator('.document-tab').first().click();
+  await expect(page.locator('.problems-panel')).not.toContainText('has no document in the workspace');
 });
 
 // ---------------------------------------------------------------------------
