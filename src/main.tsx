@@ -423,7 +423,7 @@ function App() {
     }
     return docs;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showDeploymentBundle, workflowRecords, workflowId, specText, specFormat]);
+  }, [workflowRecords, workflowId, specText, specFormat]);
   const workflowPersistence = useMemo(
     () => assertWorkflowPersistence(createWorkflowPersistence(window.localStorage, WORKFLOW_LIBRARY_KEY)),
     [],
