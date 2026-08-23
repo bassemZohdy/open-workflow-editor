@@ -1,10 +1,10 @@
-﻿# Contributing to Open Workflow Editor
+# Contributing to Open Workflow Editor
 
 Thanks for contributing! This project follows a lightweight Git workflow designed to keep `main` releasable.
 
 ## Git workflow
 
-- **`main` is protected** â€” all changes land through pull requests. (Repo setting: *Settings â†’ Branches â†’ Branch protection rules â†’ `main` â†’ require status checks (CI), require up-to-date branch, and disallow force pushes. This must be enabled in GitHub â€” it cannot be configured from the repository contents.)
+- **`main` is protected** — all changes land through pull requests. (Repo setting: *Settings → Branches → Branch protection rules → `main` → require status checks (CI), require up-to-date branch, and disallow force pushes. **STATUS (2026-08-23): enabled** via `gh api` — required checks `quality` + `browser` (strict), force pushes denied, `enforce_admins` off so owner direct pushes still work; PR merges require the two CI checks.)
 - **`develop` is the integration branch**: work happens on `feat/â€¦`/`fix/â€¦` branches off `develop`, merges into `develop`, and `develop` merges into `main` for releases. Create `develop` from `main` once and add the same protection settings.
 - Every PR should be **small and single-purpose**, with the matching line on the board in [`TODO.md`](TODO.md) flipped to `[~] IN PROGRESS` before coding and `[x]` when done.
 
