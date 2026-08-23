@@ -194,9 +194,15 @@ async function executeTaskList(taskList: TaskItem[] | undefined, run: DemoRun, s
     try {
       await pause(run.stepDelay);
       const result = await executeTask(name, definition, run, scope);
-      // Sub-flow delegation outputs become the task's context value, so
-      // parent mapping references (`$context.<task>.field`) resolve.
-      if (definition.run?.workflow && result.output && typeof result.output === 'object') {
+      // Task outputs become the task's context value, so mapping references
+      // (`$context.<task>.field`) resolve — including sub-flow delegation
+      // results and sandbox script results (the AI contracts read
+      // `$context.<scriptTask>.completion`).
+      if (
+        (definition.run?.workflow || definition.run?.script) &&
+        result.output &&
+        typeof result.output === 'object'
+      ) {
         run.context[name] = clone(result.output);
       }
       progress.status = 'completed';
@@ -379,7 +385,15 @@ async function executeTask(
         language: script.language,
         output: JSON.stringify(result),
       });
-      return { output: { sandbox: 'node', result }, next: definition.then };
+      // Task output = the sandbox result so it lands under the task name
+      // (`$context.<task>.field`), matching how `run.workflow` outputs behave.
+      return {
+        output:
+          result && typeof result === 'object' && !Array.isArray(result)
+            ? clone(result)
+            : { demo: true, scriptResult: result },
+        next: definition.then,
+      };
     }
     addLog(run, `Simulated JavaScript in ${scope}${name}`, {
       language: script.language || 'javascript',

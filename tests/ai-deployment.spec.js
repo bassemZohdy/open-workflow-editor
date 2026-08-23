@@ -88,6 +88,30 @@ test('demo engine executes the scaffolded sub-flow document', async ({ page }) =
   await expect(logs).toContainText('Completed local demo run');
 });
 
+test('demo engine executes the scaffolded AI sub-flow document (Task 40)', async ({ page }) => {
+  // Add an LLM call task: the catalog-backed ai/prompt-llm sub-flow scaffolds
+  // in a new tab, so the workspace document exists for the delegation.
+  await page.keyboard.press('Control+Shift+P');
+  const dialog = page.getByRole('dialog', { name: 'Command palette' });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.type('Add LLM call task');
+  await page.keyboard.press('Enter');
+  await expect(dialog).toBeHidden();
+  await expect(page.locator('.document-tab')).toHaveCount(2);
+
+  // Back on the parent: the sandbox script result must land under the script
+  // task name so the canonical captureResult mapping resolves, and the run
+  // completes instead of producing an undefined llmResult.
+  await page.locator('.document-tab').first().click();
+  await expect(page.locator('.runtime-pace-control select')).toBeVisible();
+  await page.getByRole('button', { name: 'Start run' }).click();
+  await expect(page.locator('.runtime-status-completed')).toBeVisible({ timeout: 10000 });
+  const logs = page.getByLabel('Workflow run logs');
+  await expect(logs).toContainText('Executing sub-flow ai/prompt-llm');
+  await expect(logs).toContainText('Completed sub-flow ai/prompt-llm');
+  await expect(logs).toContainText('Completed local demo run');
+});
+
 // ---------------------------------------------------------------------------
 // Task 39: problems panel flags unresolved sub-flow references
 // ---------------------------------------------------------------------------

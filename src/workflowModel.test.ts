@@ -1625,6 +1625,83 @@ describe('demo engine sub-flow document execution (Task 38)', () => {
   });
 });
 
+describe('demo engine script parity — task outputs under task names (Task 40)', () => {
+  async function runToCompletion(
+    runtime: ReturnType<typeof createDemoRuntimeAdapter>,
+    workflow: WorkflowDocument,
+  ) {
+    const started = (await runtime.start(workflow, {
+      prompt: 'Draft a summary',
+      goal: 'Resolve the ticket',
+      model: 'demo-model',
+    })) as { runId: string };
+    let status = (await runtime.status(started.runId)) as {
+      status: string;
+      output?: Record<string, unknown>;
+      tasks: Array<{ id: string; name: string; type: string }>;
+      failures: Array<{ message: string }>;
+      logs: string[];
+    };
+    for (
+      let attempt = 0;
+      attempt < 60 && status.status === 'running' && !status.failures.length;
+      attempt += 1
+    ) {
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 0));
+      status = (await runtime.status(started.runId)) as typeof status;
+    }
+    return status;
+  }
+
+  it('stores sandbox script outputs under the task name', async () => {
+    const runtime = createDemoRuntimeAdapter({
+      stepDelay: 0,
+      executeScript: async () => ({ total: 42 }),
+    });
+    let workflow = parseWorkflow(NEW_WORKFLOW).document;
+    workflow = {
+      ...workflow,
+      do: [
+        ...(workflow.do || []),
+        {
+          computeTotal: { run: { script: { language: 'javascript', code: '() => ({ total: 42 })' } } },
+        },
+        { useTotal: { set: { total: '${ $context.computeTotal.total }' } } },
+      ],
+    };
+
+    const status = await runToCompletion(runtime, workflow);
+    expect(status.status).toBe('completed');
+    expect(status.output?.['total']).toBe(42);
+  });
+
+  it('executing the canonical AI sub-flow document yields its contract fields', async () => {
+    const runtime = createDemoRuntimeAdapter({
+      stepDelay: 0,
+      executeScript: async () => ({
+        completion: '[scripted] hello from the sandbox',
+        model: 'company-gpt',
+        usage: { inputTokens: 4, outputTokens: 2 },
+      }),
+      subflowDocuments: [createAiSubflowDocument('llm-call')],
+    });
+    let workflow = parseWorkflow(NEW_WORKFLOW).document;
+    workflow = addTopLevelAiTask(workflow, 'llm-call');
+    workflow = {
+      ...workflow,
+      do: [...(workflow.do || []), { mapResult: { set: { summary: '${ $context.aiLlmTask.llmResult }' } } }],
+    };
+
+    const status = await runToCompletion(runtime, workflow);
+    expect(status.status).toBe('completed');
+    const llm = status.output?.['aiLlmTask'] as { llmResult?: string; executed?: boolean } | undefined;
+    expect(llm?.executed).toBe(true);
+    expect(llm?.llmResult).toBe('[scripted] hello from the sandbox');
+    expect(status.output?.['summary']).toBe('[scripted] hello from the sandbox');
+    expect(status.tasks.map((task) => task.id)).toContainEqual('aiLlmTask/subflow/prompt-llm/captureResult');
+  });
+});
+
 describe('buildLibraryRows (Task 34 — duplicate sidebar row)', () => {
   const saved = createWorkflowRecord({
     id: 'wf-saved',
