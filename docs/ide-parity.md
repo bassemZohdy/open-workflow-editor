@@ -40,8 +40,9 @@ Primary implementation: `main.tsx` (wiring & global shortcuts) and the `src/comp
 
 `src/components/layout/ProblemsPanel.tsx` — bottom dock (`Ctrl/Cmd+Shift+M`, or the status-bar count).
 
-- Aggregates SDK schema errors (severity `error`) and graph issues (severity `warning`), grouped by kind with live count badges.
-- Click to navigate: graph issue → selects the task node on the canvas; schema error → jumps to the line/column in the spec editor.
+- Aggregates SDK schema errors (severity `error`), graph issues (severity `warning`), and **sub-flow reference warnings** (severity `warning`), grouped by kind with live count badges; the sub-flow group is labelled **Sub-flow references** (`⇄`).
+- Click to navigate: graph or sub-flow item → selects the task node on the canvas **and highlights it** (the node's `selected` flag mirrors a direct canvas click); schema error → jumps to the line/column in the spec editor.
+- **Sub-flow references** (`run.workflow` targets with neither a workspace document — open tab or saved library — nor a canonical AI contract) are detected against the whole workspace; each warning carries a **Scaffold** quick action that opens/scaffolds the exact target, which resolves the warning live.
 
 ## 5. Resizable rails & independent panel collapse
 
@@ -97,7 +98,7 @@ Dismissed by outside click, `Esc`, or scroll; clamped to the viewport.
 
 The static `Dubai Government cases /` prefix is replaced by a live chain built by `workflowModel.getBreadcrumbPath`:
 
-- Root chain `workflow-name / do` always renders; selecting a task appends its segment (clickable — selects the node).
+- Root chain `workflow-name / do` always renders; selecting a task appends its segment (clickable — selects and highlights the node on the canvas).
 - Selections inside containers resolve the full nesting chain — `for.do`, `fork.branches`, and `try`/`catch` — with clickable task segments at each level.
 
 ## 11. Settings dialog
