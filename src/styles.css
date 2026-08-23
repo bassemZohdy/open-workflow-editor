@@ -2948,7 +2948,7 @@ button:focus-visible,
 .editor-layout.right-rail-collapsed .inspector-head-actions {
   gap: 0;
 }
-.editor-layout.right-rail-collapsed .inspector-head::after {
+.editor-layout.right-rail-collapsed .right-rail > .inspector.inspector-collapsed .inspector-head::after {
   content: '☰';
   color: var(--muted);
   font-size: 15px;
