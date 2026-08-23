@@ -119,6 +119,7 @@ npm run build        # Production build
 - [x] `npm run format:check` — clean.
 - [x] `npm test` — **106 unit tests pass** (13 in `src/ideParity.test.ts`, +4 breadcrumb +2 reorder, +4 Task 16 AI builders, +5 gateway AI endpoints, +4 demo AI delegation incl. template, +4 Task 34 `buildLibraryRows`, +6 Task 35/37 deployment bundle, +4 Task 38 sub-flow execution, +3 Task 39 sub-flow diagnostics, +2 Task 40 script parity, +3 Task 41 bundle structure, +5 Task 53 provider bridge, +3 Task 54 gateway↔bridge).
 - [x] `npm run test:browser` — **71 Playwright E2E tests pass** (parallel workers; +1 Task 34 regression, +6 Task 35–40: AI bundle artifacts, rail icon strip, scaffolded user sub-flow bundle, demo sub-flow execution, unresolved sub-flow warning, canonical AI sub-flow demo run, +1 Task 52 namespace-aware scaffold).
+- [x] **Stability re-verification (2026-08-23):** 3× consecutive full-suite runs — **71/71 each (213/213), zero flakes** (Task 24 standard re-applied after Tasks 34–57).
 - [x] `npm run build` — production bundle builds.
 
 ---
