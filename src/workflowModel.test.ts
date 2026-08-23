@@ -802,6 +802,92 @@ describe('workflow model adapter', () => {
     expect(bundle.kubernetesYaml).toContain('kind: Service');
     expect(bundle.readmeMd).toContain('Docker');
     expect(bundle.readmeMd).toContain('kubectl apply');
+    expect(bundle.aiSubflows).toEqual([]);
+    expect(bundle.dockerfile).toContain('COPY workflow.yaml /app/workflow.yaml');
+    expect(bundle.dockerfile).not.toContain('COPY ai/');
+    expect(bundle.kubernetesYaml).not.toContain('WORKFLOW_SUBFLOW_PATH');
+  });
+
+  it('ships referenced AI sub-flows in the deployment bundle', async () => {
+    const { generateDeploymentBundle } = await import('./deploymentBundle');
+    const template = WORKFLOW_TEMPLATES.find((entry) => entry.id === 'ai-orchestration');
+    expect(template).toBeDefined();
+    const bundle = generateDeploymentBundle(template!.specification, 'ai-orchestration');
+
+    expect(bundle.aiSubflows.map((artifact) => artifact.name).sort()).toEqual(['ai-agent', 'prompt-llm']);
+    expect(bundle.dockerfile).toContain('COPY ai/ /app/ai/');
+    expect(bundle.dockerfile).toContain('ENV WORKFLOW_SUBFLOW_PATH=/app/ai');
+    expect(bundle.kubernetesYaml).toContain('ai/prompt-llm.yaml: |');
+    expect(bundle.kubernetesYaml).toContain('ai/ai-agent.yaml: |');
+    expect(bundle.kubernetesYaml).toContain('mountPath: /app/ai/prompt-llm.yaml');
+    expect(bundle.kubernetesYaml).toContain('subPath: ai/ai-agent.yaml');
+    expect(bundle.kubernetesYaml).toContain('WORKFLOW_SUBFLOW_PATH');
+    expect(bundle.readmeMd).toContain('ai/prompt-llm.yaml');
+    expect(bundle.readmeMd).toContain('WORKFLOW_SUBFLOW_PATH=/app/ai');
+    // The bundled sub-flow YAMLs are schema-valid and catalog-backed.
+    const llm = bundle.aiSubflows.find((artifact) => artifact.name === 'prompt-llm');
+    expect(parseWorkflow(llm!.yaml).document.document?.name).toBe('prompt-llm');
+    expect(llm!.yaml).toContain('ai-providers');
+    const agent = bundle.aiSubflows.find((artifact) => artifact.name === 'ai-agent');
+    expect(agent!.yaml).toContain('agents');
+  });
+
+  it('finds AI delegations inside nested containers and dedupes by name', async () => {
+    const { findAiDelegations } = await import('./deploymentBundle');
+    const nested = `document:
+  dsl: "1.0.3"
+  namespace: default
+  name: nested-ai
+  version: "0.1.0"
+do:
+  - topDelegation:
+      run:
+        workflow:
+          namespace: ai
+          name: prompt-llm
+          version: "0.1.0"
+  - processBatch:
+      for:
+        each: item
+        in: "\${ $input.items }"
+      do:
+        - innerDelegation:
+            run:
+              workflow:
+                namespace: ai
+                name: prompt-llm
+                version: "0.1.0"
+        - agentCall:
+            run:
+              workflow:
+                namespace: ai
+                name: ai-agent
+                version: "0.1.0"
+        - retryCall:
+            try:
+              - guarded:
+                  run:
+                    workflow:
+                      namespace: ai
+                      name: ai-agent
+                      version: "0.1.0"
+            catch:
+              do:
+                - catchCall:
+                    run:
+                      workflow:
+                        namespace: ai
+                        name: ai-agent
+                        version: "0.1.0"
+  - externalCall:
+      run:
+        workflow:
+          namespace: billing
+          name: billing-process
+          version: "0.1.0"`;
+    const artifacts = findAiDelegations(nested);
+    expect(artifacts.map((artifact) => artifact.name).sort()).toEqual(['ai-agent', 'prompt-llm']);
+    expect(artifacts).toHaveLength(2);
   });
 
   it('streams SSE telemetry events on GET /runs/:id/events', async () => {

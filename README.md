@@ -56,6 +56,7 @@ Click **Deploy bundle** in the workspace toolbar to generate:
 2. `deployment.yaml` (Kubernetes `ConfigMap`, `Deployment` with probes, and `Service`).
 3. `workflow.yaml` with valid Open Workflow Specification syntax.
 4. `README.md` with Docker and `kubectl apply` commands.
+5. `ai/*.yaml` for every referenced AI sub-flow (`run.workflow` → `ai` namespace) — copied into the image, mounted as ConfigMap keys, and documented with `WORKFLOW_SUBFLOW_PATH=/app/ai`. See [`docs/ai-tasks.md`](docs/ai-tasks.md).
 
 ---
 
