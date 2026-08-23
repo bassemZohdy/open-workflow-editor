@@ -344,6 +344,14 @@ test('template catalog includes the AI orchestration pattern', async ({ page }) 
   await page.getByRole('button', { name: 'Use template' }).click();
   await expect(page.locator('.workflow-name-input')).toHaveValue(/ai-orchestration/);
   await expect(page.getByRole('group', { name: 'run task delegateLlm' })).toBeVisible();
+
+  // The flagship AI pattern orchestrates end-to-end in the demo engine.
+  await page.getByRole('button', { name: 'Start run' }).click();
+  await expect(page.locator('.runtime-status-completed')).toBeVisible({ timeout: 10000 });
+  const logs = page.getByLabel('Workflow run logs');
+  await expect(logs).toContainText('Executed LLM sub-flow delegateLlm');
+  await expect(logs).toContainText('Executed AI agent sub-flow delegateAgent');
+  await expect(logs).toContainText('Completed local demo run');
 });
 
 // ---------------------------------------------------------------------------

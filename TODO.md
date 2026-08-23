@@ -25,6 +25,7 @@ Build a real, production-ready "VS Code for Open Workflow Specifications": a bro
 | 43  | One-click scaffold from unresolved sub-flow warnings                | `[x]`  | DONE: warnings carry `subflowTarget`; Problems items support quick actions — the "Sub-flow references" warning renders a `Scaffold` button that opens/scaffolds the target and resolves live. 1 unit assertion + E2E steps (no new count).                                                               |
 | 44  | Deployment bundle dialog: per-sub-flow file tabs                    | `[x]`  | DONE: each shipped `subflows/<ns>/<name>.yaml` artifact gets its own preview tab with copy/download (sanitized names); E2E covers both artifact sources. 2 E2E steps (no new count).                                                                                                                     |
 | 45  | Runtime task timeline shows sub-flow scope                          | `[x]`  | DONE: timeline rows show the scoped demo-engine id (`<task>/subflow/<name>/<step>`) in the sub-label so steps from different sub-flows are distinguishable; 1 E2E assertion.                                                                                                                             |
+| 46  | ai-orchestration template runs end-to-end (guard)                   | `[x]`  | DONE: 2 unit tests run the template through the demo engine (mock delegations; executed AI docs with script results) asserting `llmSummary`/`agentOutcome` mapping; template E2E adds a real demo run. 98 unit / 70 E2E.                                                                                 |
 
 Task 16 was implemented via valid-DSL composition (sub-flow delegation + catalog-backed providers, per `docs/ai-tasks.md`) instead of waiting for native DSL keys; the native types remain a future option.
 
@@ -76,6 +77,7 @@ Live dev-server review (Task 33's demo-engine AI delegation fix, since committed
 - **Gap closed (Task 43): the unresolved sub-flow warning only selected the task.** Its message said "Open or scaffold it before deploying" but offered no path. `GraphIssue.subflowTarget` carries the reference; Problems-panel items gained an optional quick `action`, and sub-flow warnings now render a `Scaffold` button wired to `handleOpenSubflow(name, namespace)` — the target document opens/scaffolds in a tab and the warning disappears live (workspace documents now include it). E2E: warning → Scaffold → sub-flow tab → back → warning gone. One strict-mode lesson: the item's accessible name includes the action label, so the E2E matches `{ name: 'Scaffold', exact: true }`.
 - **Gap closed (Task 44): shipped sub-flow files had no preview of their own.** The bundle dialog tabbed only the four main files; `subflows/<ns>/<name>.yaml` artifacts were visible solely embedded in the ConfigMap/Dockerfile/README. `subflowKey` is exported and every artifact now gets its own tab (between `workflow.yaml` and `README.md`) with per-file copy and download (names sanitize `/` → `_`). E2E covers both artifact sources (canonical AI tab shows `ai-providers`; user-doc tab shows `subflowReady`).
 - **Gap closed (Task 45): run timeline showed sub-flow steps with ambiguous plain names.** The demo engine scopes task ids for executed sub-flow documents (`<task>/subflow/<name>/<step>`), but the timeline rendered only the plain `name` — `captureResult`/`initSubflow` could repeat across sub-flows with no path context. Timeline rows now show the scoped path as the sub-label when the id carries it. E2E asserts the annotated row (`runTask/subflow/billing-process/initSubflow`).
+- **Coverage added (Task 46): the flagship AI template was never executed by tests.** `ai-orchestration` was only asserted structurally. Now 2 unit tests drive it through the demo engine — (a) mocked delegations (plain runToCompletion) and (b) executed AI sub-flow documents with sandbox-script results — asserting `llmSummary`/`agentOutcome` map through and the scoped `captureResult` steps appear; the template E2E additionally performs a real demo run and asserts `Executed LLM sub-flow delegateLlm` / `Executed AI agent sub-flow delegateAgent` logs.
 - **Regression found & fixed (Task 40): executing the canonical AI sub-flow produced `undefined` contract fields.** Task 38 made the demo engine execute matched workspace documents — and since a palette AI scaffold leaves `ai/prompt-llm` open as a tab, the canonical doc (script + `captureResult` mapping `$context.invokeLlm.completion`) got executed instead of mocked. But sandbox script results were merged flat into context and never stored under the task name, so `$context.invokeLlm.completion` resolved to `undefined` — the run still "completed" with a broken `llmResult`. Fix: `run.script` results are now the task output (`context.<task> = scriptResult`, same as `run.workflow`); the flat merge stays for back-compat. TDD pair (2 unit tests) failed before the fix, then green; 1 E2E drives the real palette scaffold → demo run → `Executing/Completed sub-flow ai/prompt-llm` with the sandbox stub.
 
 ---
@@ -83,7 +85,7 @@ Live dev-server review (Task 33's demo-engine AI delegation fix, since committed
 ## Verification Commands
 
 ```bash
-npm test             # Vitest unit tests (96)
+npm test             # Vitest unit tests (98)
 npm run test:browser # Playwright E2E tests (70, parallel workers)
 npm run typecheck    # tsc --noEmit
 npm run lint         # ESLint
@@ -96,7 +98,7 @@ npm run build        # Production build
 - [x] `npm run typecheck` — clean.
 - [x] `npm run lint` — clean.
 - [x] `npm run format:check` — clean.
-- [x] `npm test` — **96 unit tests pass** (13 in `src/ideParity.test.ts`, +4 breadcrumb +2 reorder, +4 Task 16 AI builders, +5 gateway AI endpoints, +2 demo AI delegation, +4 Task 34 `buildLibraryRows`, +6 Task 35/37 deployment bundle, +4 Task 38 sub-flow execution, +3 Task 39 sub-flow diagnostics, +2 Task 40 script parity, +3 Task 41 bundle structure).
+- [x] `npm test` — **98 unit tests pass** (13 in `src/ideParity.test.ts`, +4 breadcrumb +2 reorder, +4 Task 16 AI builders, +5 gateway AI endpoints, +4 demo AI delegation incl. template, +4 Task 34 `buildLibraryRows`, +6 Task 35/37 deployment bundle, +4 Task 38 sub-flow execution, +3 Task 39 sub-flow diagnostics, +2 Task 40 script parity, +3 Task 41 bundle structure).
 - [x] `npm run test:browser` — **70 Playwright E2E tests pass** (parallel workers; +1 Task 34 regression, +6 Task 35–40: AI bundle artifacts, rail icon strip, scaffolded user sub-flow bundle, demo sub-flow execution, unresolved sub-flow warning, canonical AI sub-flow demo run).
 - [x] `npm run build` — production bundle builds.
 
@@ -142,6 +144,7 @@ npm run build        # Production build
 | 43  | One-click scaffold from sub-flow warnings            | warnings carry `subflowTarget`; item quick-action `Scaffold` → opens/scaffolds the target and resolves the warning live (E2E covers the whole cycle)                                                                                                                                           |
 | 44  | Deployment bundle dialog per-artifact tabs           | exported `subflowKey`; each shipped `subflows/<ns>/<name>.yaml` previews in its own tab with copy/download (sanitized names) — E2E covers both artifact sources                                                                                                                                |
 | 45  | Runtime timeline sub-flow scope annotation           | timeline rows show the scoped engine id (`<task>/subflow/<name>/<step>`) as sub-label when present; E2E asserts the annotated row                                                                                                                                                              |
+| 46  | ai-orchestration end-to-end test guard               | 2 unit tests run the template via demo engine (mocked and executed-AI-doc paths) + template E2E demo run; `llmSummary`/`agentOutcome` mapping asserted                                                                                                                                         |
 
 ### VS Code parity round 1 (Tasks 1–9)
 

@@ -1448,14 +1448,14 @@ describe('demo engine AI delegation (Task 33)', () => {
     let status = (await runtime.status(started.runId)) as {
       status: string;
       output?: Record<string, unknown>;
-      tasks: Array<{ name: string; type: string }>;
+      tasks: Array<{ id: string; name: string; type: string }>;
     };
     for (let attempt = 0; attempt < 30 && status.status === 'running'; attempt += 1) {
       await new Promise((resolve) => globalThis.setTimeout(resolve, 0));
       status = (await runtime.status(started.runId)) as {
         status: string;
         output?: Record<string, unknown>;
-        tasks: Array<{ name: string; type: string }>;
+        tasks: Array<{ id: string; name: string; type: string }>;
       };
     }
     return status;
@@ -1490,6 +1490,46 @@ describe('demo engine AI delegation (Task 33)', () => {
       { agentResult?: string; steps?: unknown[] } | undefined;
     expect(agentContext?.agentResult).toContain('[mock-agent] Resolve the ticket');
     expect(agentContext?.steps).toHaveLength(2);
+  });
+
+  it('runs the ai-orchestration template end-to-end with mocked delegations', async () => {
+    const template = WORKFLOW_TEMPLATES.find((entry) => entry.id === 'ai-orchestration');
+    expect(template).toBeDefined();
+    const runtime = createDemoRuntimeAdapter({
+      stepDelay: 0,
+      executeScript: async () => ({ completion: 'done' }),
+    });
+    const status = await runToCompletion(runtime, parseWorkflow(template!.specification).document);
+    expect(status.status).toBe('completed');
+    expect(status.tasks.map((task) => task.name)).toEqual(
+      expect.arrayContaining(['captureRequest', 'delegateLlm', 'delegateAgent', 'mapOutcome', 'emitReady']),
+    );
+    expect(status.output?.['llmSummary']).toContain('[mock-llm]');
+    expect(status.output?.['agentOutcome']).toContain('[mock-agent]');
+  });
+
+  it('runs the ai-orchestration template end-to-end executing the AI sub-flow documents', async () => {
+    const template = WORKFLOW_TEMPLATES.find((entry) => entry.id === 'ai-orchestration');
+    expect(template).toBeDefined();
+    const runtime = createDemoRuntimeAdapter({
+      stepDelay: 0,
+      executeScript: async () => ({
+        completion: '[scripted] template llm',
+        outcome: '[scripted] template agent',
+        model: 'company-gpt',
+      }),
+      subflowDocuments: [createAiSubflowDocument('llm-call'), createAiSubflowDocument('ai-agent-call')],
+    });
+    const status = await runToCompletion(runtime, parseWorkflow(template!.specification).document);
+    expect(status.status).toBe('completed');
+    expect(status.tasks.map((task) => task.id)).toContainEqual(
+      'delegateLlm/subflow/prompt-llm/captureResult',
+    );
+    expect(status.tasks.map((task) => task.id)).toContainEqual(
+      'delegateAgent/subflow/ai-agent/captureResult',
+    );
+    expect(status.output?.['llmSummary']).toBe('[scripted] template llm');
+    expect(status.output?.['agentOutcome']).toBe('[scripted] template agent');
   });
 });
 
