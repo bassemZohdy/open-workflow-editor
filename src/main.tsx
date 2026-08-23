@@ -469,19 +469,13 @@ function App() {
     window.localStorage.setItem('open-workflow-theme', globalTheme);
   }, [globalTheme]);
 
-  // Post-commit AI sub-flow scaffolding: stashes the parent tab (which now
-  // includes the delegation task) and opens the catalog-backed sub-flow tab.
+  // Post-commit AI sub-flow scaffolding: reuses `handleOpenSubflow` so an
+  // existing matching sub-flow tab/library entry is switched to (no duplicate
+  // tabs), otherwise the catalog-backed sub-flow is scaffolded in a new tab.
   useEffect(() => {
     if (!aiScaffoldRequest) return;
     const spec = getAiTaskSpec(aiScaffoldRequest.kind);
-    const id = createWorkflowId();
-    stashActiveTab();
-    setWorkflowId(id);
-    setWorkflowName(spec.subflowName);
-    setHistory([]);
-    setFuture([]);
-    syncDocument(createAiSubflowDocument(spec.kind), {}, true);
-    setOpenTabIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    handleOpenSubflow(spec.subflowName, spec.subflowNamespace, spec.subflowVersion);
     setAiScaffoldRequest(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aiScaffoldRequest?.requestId]);

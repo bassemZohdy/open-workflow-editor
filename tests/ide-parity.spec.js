@@ -335,6 +335,12 @@ test('AI palette entry scaffolds a delegation task and catalog-backed sub-flow',
   await expect(page.getByRole('group', { name: 'run task aiLlmTask' })).toBeVisible();
   await expect(page.getByRole('group', { name: 'AI delegation: LLM call' })).toBeVisible();
   await expect(page.getByText(/ai\/prompt-llm/)).toBeVisible();
+
+  // Adding another LLM call task reuses the existing sub-flow tab instead of
+  // scaffolding a duplicate (Task 51).
+  await page.getByRole('button', { name: 'Add LLM call task' }).press('Enter');
+  await expect(page.locator('.workflow-name-input')).toHaveValue('prompt-llm', { timeout: 8000 });
+  await expect(page.locator('.document-tab')).toHaveCount(2);
 });
 
 test('template catalog includes the AI orchestration pattern', async ({ page }) => {
