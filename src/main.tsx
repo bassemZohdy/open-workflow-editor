@@ -1941,6 +1941,17 @@ do:
     return items;
   }, [openWorkflowForSearch, specText, workflowId, workflowName, workflowRecords]);
 
+  /**
+   * Select a task from outside the canvas (problems panel, breadcrumbs, quick
+   * open, …): opens the Inspector AND highlights the node on the canvas
+   * (`selected` flag mirrors what a direct canvas click produces).
+   */
+  const selectTaskOnCanvas = useCallback((id: string) => {
+    setView('canvas');
+    setSelectedId(id);
+    setNodes((current) => current.map((node) => ({ ...node, selected: node.id === id })));
+  }, []);
+
   const problemItems = useMemo<ProblemItem[]>(() => {
     const items: ProblemItem[] = [];
     if (syntaxError) {
@@ -1971,8 +1982,7 @@ do:
         severity: 'warning',
         kind: 'graph',
         onSelect: () => {
-          setView('canvas');
-          setSelectedId(targetId);
+          selectTaskOnCanvas(targetId);
         },
       });
     });
@@ -1993,8 +2003,7 @@ do:
             }
           : undefined,
         onSelect: () => {
-          setView('canvas');
-          setSelectedId(targetId);
+          selectTaskOnCanvas(targetId);
         },
       });
     });
@@ -2599,7 +2608,7 @@ do:
                       <button
                         type="button"
                         className="breadcrumb-segment breadcrumb-task"
-                        onClick={() => setSelectedId(segment.taskId)}
+                        onClick={() => selectTaskOnCanvas(segment.taskId as string)}
                         title={`Select ${segment.label}`}
                       >
                         {segment.label}

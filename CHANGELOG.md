@@ -34,6 +34,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- **Selecting a task from outside the canvas highlights it there:** problems-panel items and breadcrumb clicks set `selectedId` (which opened the Inspector) but never marked the node `selected`, so the canvas showed no highlight. New `selectTaskOnCanvas` helper (sets view, selection, and the node's `selected` flag — mirroring a direct canvas click) is used by the problems panel (graph + sub-flow groups) and breadcrumbs. (Task 47)
 - **ai-orchestration template orchestration is covered end-to-end:** the flagship AI pattern was only asserted structurally — now 2 unit tests run it through the demo engine (mocked delegations, and executed AI sub-flow documents with sandbox-script results) asserting `llmSummary`/`agentOutcome` map through, plus the template E2E performs a real demo run and checks the delegation log lines. (Task 46)
 - **Runtime task timeline annotates sub-flow steps with their scope:** executed sub-flow steps (`<task>/subflow/<name>/<step>`) now display their scoped path in the timeline row instead of a bare name — plain names like `captureResult` can repeat across sub-flows. (Task 45)
 - **Deployment bundle dialog previews shipped sub-flow files individually:** each `subflows/<namespace>/<name>.yaml` artifact now gets its own tab next to the main files, with per-file copy/download (download names sanitize `/` → `_`); previously artifacts were only visible embedded in the ConfigMap/Dockerfile/README tabs. (Task 44)

@@ -144,10 +144,12 @@ test('problems panel flags an unresolved sub-flow target and selects its task', 
   await expect(panel).toContainText('billing-process');
   await expect(panel).toContainText('has no document in the workspace');
 
-  // Clicking the warning selects the delegating task (its Inspector opens).
+  // Clicking the warning selects the delegating task (its Inspector opens)
+  // and highlights the node on the canvas.
   await panel.locator('.problems-item').filter({ hasText: 'billing-process' }).click();
   await expect(page.getByLabel('Run mode')).toBeVisible();
   await expect(page.getByLabel('Sub-flow name', { exact: true })).toHaveValue('billing-process');
+  await expect(page.locator('.react-flow__node-task', { hasText: 'runTask' })).toHaveClass(/selected/);
 
   // The Scaffold action opens the sub-flow document; the warning resolves.
   await panel.getByRole('button', { name: 'Scaffold', exact: true }).click();
