@@ -1034,3 +1034,76 @@ export function validateGraph(document: WorkflowDocument): GraphIssue[] {
 
   return issues;
 }
+
+export interface SubflowReference {
+  namespace: string;
+  name: string;
+  version?: string;
+  /** Top-level task delegating (transitively) — the canvas selection target. */
+  topLevelName: string;
+}
+
+/**
+ * Collect every `run.workflow` delegation in a document, walking all task
+ * containers (`do`/`for`, `fork.branches`, `try`, `catch.do`) and deduping by
+ * `${namespace}/${name}`.
+ */
+export function collectSubflowReferences(document: WorkflowDocument): SubflowReference[] {
+  const seen = new Set<string>();
+  const references: SubflowReference[] = [];
+  const visit = (list: TaskItem[] | undefined, topLevelName: string) => {
+    for (const item of list ?? []) {
+      const taskName = Object.keys(item)[0];
+      const task: TaskDefinition = item[taskName];
+      const workflow = task.run?.workflow;
+      if (workflow?.namespace && workflow.name) {
+        const key = `${workflow.namespace}/${workflow.name}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          references.push({
+            namespace: workflow.namespace,
+            name: workflow.name,
+            version: workflow.version,
+            topLevelName,
+          });
+        }
+      }
+      visit(task.do, topLevelName);
+      visit(task.fork?.branches, topLevelName);
+      visit(task.try, topLevelName);
+      visit(task.catch?.do, topLevelName);
+    }
+  };
+  for (const item of document.do ?? []) visit([item], Object.keys(item)[0]);
+  return references.sort((left, right) =>
+    `${left.namespace}/${left.name}`.localeCompare(`${right.namespace}/${right.name}`),
+  );
+}
+
+/**
+ * Problem-panel warnings for `run.workflow` targets with neither a workspace
+ * document (open tab / saved library) nor a canonical AI contract — the bundle
+ * cannot ship them and the demo engine can only simulate them.
+ */
+export function detectMissingSubflowReferences(
+  document: WorkflowDocument,
+  workspaceDocuments: readonly WorkflowDocument[] = [],
+): GraphIssue[] {
+  const issues: GraphIssue[] = [];
+  for (const reference of collectSubflowReferences(document)) {
+    const provided = workspaceDocuments.some(
+      (candidate) =>
+        candidate.document?.namespace === reference.namespace && candidate.document?.name === reference.name,
+    );
+    const canonical = AI_TASK_SPECS.some(
+      (spec) => spec.subflowNamespace === reference.namespace && spec.subflowName === reference.name,
+    );
+    if (!provided && !canonical) {
+      issues.push({
+        path: `/do/${reference.topLevelName}`,
+        message: `Sub-flow target “${reference.namespace}/${reference.name}” has no document in the workspace. Open or scaffold it before deploying.`,
+      });
+    }
+  }
+  return issues;
+}

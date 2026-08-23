@@ -23,6 +23,7 @@ import {
   autoLayoutFlow,
   createAiSubflowDocument,
   createFlowGraph,
+  detectMissingSubflowReferences,
   duplicateTopLevelTask,
   getAiTaskSpec,
   getBreadcrumbPath,
@@ -1598,6 +1599,10 @@ do:
     return segments.length > 0 ? segments : [{ label: 'do', taskId: null }];
   }, [document, selectedId]);
   const graphIssues = useMemo(() => (syntaxError ? [] : validateGraph(document)), [document, syntaxError]);
+  const subflowIssues = useMemo(
+    () => detectMissingSubflowReferences(document, workspaceDocuments),
+    [document, workspaceDocuments],
+  );
   const specDiagnostics = useMemo<SpecDiagnostic[]>(
     () => collectSpecDiagnostics(specText, specFormat, syntaxError, graphIssues),
     [specText, specFormat, syntaxError, graphIssues],
@@ -1971,8 +1976,25 @@ do:
         },
       });
     });
+    subflowIssues.forEach((issue, index) => {
+      const targetMatch = /^\/do\/([^/]+)/.exec(issue.path);
+      const targetId = targetMatch ? `/do/${targetMatch[1]}` : null;
+      if (!targetId) return;
+      items.push({
+        id: `subflow-${index}`,
+        message: issue.message,
+        path: issue.path,
+        severity: 'warning',
+        kind: 'subflow',
+        onSelect: () => {
+          setView('canvas');
+          setSelectedId(targetId);
+        },
+      });
+    });
     return items;
-  }, [graphIssues, specDiagnostics, specFormat, specText, syntaxError]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graphIssues, subflowIssues, specDiagnostics, specFormat, specText, syntaxError]);
 
   const paletteCommands = useMemo<PaletteCommand[]>(() => {
     const commands: PaletteCommand[] = [

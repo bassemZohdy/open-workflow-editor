@@ -18,6 +18,7 @@ Build a real, production-ready "VS Code for Open Workflow Specifications": a bro
 | 36  | Right-rail collapsed icon strip renders clipped "☰ Inspector" text | `[x]`  | FIXED: CSS specificity bug — see Review findings below.                                                                                                                                                                                                                                                  |
 | 37  | Deployment bundle ships user sub-flow documents too                 | `[x]`  | DONE: `findSubflowDelegations` materializes every `run.workflow` target from workspace documents (open tabs + saved records; live edits win, incl. AI), canonical AI-contract fallback, unresolved-references README note; unified `subflows/<ns>/<name>.yaml` layout; 4 unit tests + 1 E2E.             |
 | 38  | Demo engine executes referenced sub-flow documents                  | `[x]`  | DONE: `run.workflow` targets matching workspace documents (open tabs + saved records, ns+name; snapshotted per run via getter) execute recursively with a depth guard — child context seeded from parent, steps/logs in the same run; no-doc behavior unchanged (AI contract mock). 4 unit + 1 E2E.      |
+| 39  | Problems panel flags unresolved sub-flow references                 | `[x]`  | DONE: `detectMissingSubflowReferences` warns on `run.workflow` targets with no workspace document and no canonical AI contract; click → delegating task; `collectSubflowReferences` shared with the bundle (dedupe + top-level path). 3 unit + 1 E2E.                                                    |
 
 Task 16 was implemented via valid-DSL composition (sub-flow delegation + catalog-backed providers, per `docs/ai-tasks.md`) instead of waiting for native DSL keys; the native types remain a future option.
 
@@ -63,14 +64,15 @@ Live dev-server review (Task 33's demo-engine AI delegation fix, since committed
 - **Gap closed (Task 35): deployment bundle did not ship referenced AI sub-flows.** `generateDeploymentBundle` embedded only the parent `workflow.yaml`, so a workflow delegating via `run.workflow` → `ai/*` deployed with dangling references. Now `findAiDelegations` walks the parsed document (top-level `do` plus nested `for`/`fork.branches`/`try`/`catch.do`) collecting canonical AI sub-flow targets (deduped by name), and the bundle emits `ai/<name>.yaml` artifacts: Dockerfile `COPY ai/ /app/ai/` + `ENV WORKFLOW_SUBFLOW_PATH=/app/ai`, ConfigMap keys (`ai/<name>.yaml`) with volume `items` + `subPath` file mounts and the env var in the Deployment, and a README "AI Sub-flows" section (canonical-contract note for customized sub-flows). Workflows without AI delegations are unchanged (verified: no `ai/` references emitted). 2 unit tests.
 - **Gap closed (Task 37): bundle still dropped user sub-flow references.** Task 35 handled `ai/*` canonically only — a scaffolded `billing-process` (namespace `dubai-government` etc.) deployed with a dangling reference. Now `findSubflowDelegations` collects ALL `run.workflow` targets and materializes each from workspace documents: `availableDocuments` = open-tab documents + parsed saved library records (matched by `namespace`+`name`), so your edited sub-flow (AI ones included) ships verbatim; AI targets without a document fall back to the canonical builder; anything else goes into an "Unresolved sub-flow references" README note. Layout unified to `subflows/<namespace>/<name>.yaml` (`COPY subflows/`, `WORKFLOW_SUBFLOW_PATH=/app/subflows`, ConfigMap keys + `items`/`subPath` mounts; Task 35's own `ai/` layout was still un-consumed). 4 unit tests + 1 E2E (scaffold → bundle). Caught along the way: the first main.tsx wiring hit a TDZ error (`tabDocumentsRef` read before its declaration) — the dialog documents memo now sits after the ref.
 - **Gap closed (Task 38): demo engine only simulated sub-flow delegations.** `run.workflow` tasks with a matching workspace document (open tab or saved library, matched by `namespace`+`name`) now execute that document's task list — a child context seeded with the parent's state/input means the delegation result carries the sub-flow's keys (e.g. `subflowReady`, or `llmResult` from an edited AI sub-flow), so parent mapping steps resolve end-to-end; child steps and logs stream into the same run under a scoped path (`<task>/subflow/<name>/…`), with a nesting depth guard (default 4, `MAX_SUBFLOW_DEPTH`). The runtime snapshots `subflowDocuments` at run start (array or getter), so later workspace edits never disturb in-flight runs — the RuntimePanel wires a ref-backed getter to avoid recreation churn. Mock behavior (AI contract / `Simulated sub-flow`) is untouched when no document matches. 4 unit tests + 1 E2E (scaffold → run → log lines).
+- **Gap closed (Task 39): dangling sub-flow references were silently accepted.** A `run.workflow` to a target with no workspace document (and no canonical AI contract) produced no problem until deployment surfaced it. `workflowModel.collectSubflowReferences` (exported; the deployment bundle now reuses the same walk — duplicated walker removed) + `detectMissingSubflowReferences` emit a warning issue (`path: /do/<top-level task>`) for each missing target, exempting provided documents and canonical AI names; the Problems panel gained a `subflow` group whose items select the delegating task (Inspector opens). 3 unit tests + 1 E2E (unscaffolded delegation → panel warning → click selects its inspector).
 
 ---
 
 ## Verification Commands
 
 ```bash
-npm test             # Vitest unit tests (88)
-npm run test:browser # Playwright E2E tests (68, parallel workers)
+npm test             # Vitest unit tests (91)
+npm run test:browser # Playwright E2E tests (69, parallel workers)
 npm run typecheck    # tsc --noEmit
 npm run lint         # ESLint
 npm run format:check # Prettier
@@ -82,8 +84,8 @@ npm run build        # Production build
 - [x] `npm run typecheck` — clean.
 - [x] `npm run lint` — clean.
 - [x] `npm run format:check` — clean.
-- [x] `npm test` — **88 unit tests pass** (13 in `src/ideParity.test.ts`, +4 breadcrumb +2 reorder, +4 Task 16 AI builders, +5 gateway AI endpoints, +2 demo AI delegation, +4 Task 34 `buildLibraryRows`, +6 Task 35/37 deployment bundle, +4 Task 38 sub-flow execution).
-- [x] `npm run test:browser` — **68 Playwright E2E tests pass** (parallel workers; +1 Task 34 regression, +4 Task 35/36/37/38: AI bundle artifacts, rail icon strip, scaffolded user sub-flow bundle, demo sub-flow execution).
+- [x] `npm test` — **91 unit tests pass** (13 in `src/ideParity.test.ts`, +4 breadcrumb +2 reorder, +4 Task 16 AI builders, +5 gateway AI endpoints, +2 demo AI delegation, +4 Task 34 `buildLibraryRows`, +6 Task 35/37 deployment bundle, +4 Task 38 sub-flow execution, +3 Task 39 sub-flow diagnostics).
+- [x] `npm run test:browser` — **69 Playwright E2E tests pass** (parallel workers; +1 Task 34 regression, +5 Task 35–39: AI bundle artifacts, rail icon strip, scaffolded user sub-flow bundle, demo sub-flow execution, unresolved sub-flow warning).
 - [x] `npm run build` — production bundle builds.
 
 ---
@@ -121,6 +123,7 @@ npm run build        # Production build
 | 36  | Right-rail collapsed strip clips "☰ Inspector" text | CSS specificity bug — full-collapse icon rule now scoped to 6 classes so it wins over the individual-panel-collapse rule; verified live (expand/collapse cycle clean)                                                                                                                          |
 | 37  | Deployment bundle ships user sub-flow documents      | `findSubflowDelegations` materializes every `run.workflow` target from workspace docs (tabs + saved records, matched by ns+name; edits win, incl. AI), canonical AI fallback, unresolved note; unified `subflows/<ns>/<name>.yaml`; 4 unit + 1 E2E                                             |
 | 38  | Demo engine executes referenced sub-flow documents   | `run.workflow` targets matching workspace docs execute recursively (child context seeded from parent, scoped steps/logs in the same run, nesting depth guard, per-run snapshot); 4 unit + 1 E2E; mock behavior unchanged when unmatched                                                        |
+| 39  | Problems panel flags unresolved sub-flow references  | `collectSubflowReferences` (shared with the bundle) + `detectMissingSubflowReferences` — warnings for targets with no workspace document and no canonical AI contract, click → delegating task; 3 unit + 1 E2E                                                                                 |
 
 ### VS Code parity round 1 (Tasks 1–9)
 

@@ -1,5 +1,11 @@
-import { AI_TASK_SPECS, createAiSubflowDocument, parseWorkflow, serializeWorkflow } from './workflowModel';
-import type { TaskDefinition, TaskItem, WorkflowDocument } from './types';
+import {
+  AI_TASK_SPECS,
+  collectSubflowReferences,
+  createAiSubflowDocument,
+  parseWorkflow,
+  serializeWorkflow,
+} from './workflowModel';
+import type { WorkflowDocument } from './types';
 
 export interface DeploymentBundle {
   workflowName: string;
@@ -32,38 +38,6 @@ export interface SubflowCollection {
 }
 
 /**
- * Collect every sub-flow a workflow delegates to (`run.workflow`), walking all
- * task containers (`do`/`for`, `fork.branches`, `try`, `catch.do`) and
- * deduping by `${namespace}/${name}`.
- */
-function collectSubflowTargets(document: WorkflowDocument): SubflowTarget[] {
-  const seen = new Set<string>();
-  const targets: SubflowTarget[] = [];
-  const visit = (list: TaskItem[] | undefined) => {
-    for (const item of list ?? []) {
-      const taskName = Object.keys(item)[0];
-      const task: TaskDefinition = item[taskName];
-      const workflow = task.run?.workflow;
-      if (workflow?.namespace && workflow.name) {
-        const key = `${workflow.namespace}/${workflow.name}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          targets.push({ namespace: workflow.namespace, name: workflow.name, version: workflow.version });
-        }
-      }
-      visit(task.do);
-      visit(task.fork?.branches);
-      visit(task.try);
-      visit(task.catch?.do);
-    }
-  };
-  visit(document.do);
-  return targets.sort((left, right) =>
-    `${left.namespace}/${left.name}`.localeCompare(`${right.namespace}/${right.name}`),
-  );
-}
-
-/**
  * Materialize the runnable sub-flow definitions for a workflow's delegations:
  * - a document from the workspace matching `namespace` + `name` wins (the
  *   user's live sub-flow, including edits);
@@ -84,7 +58,7 @@ export function findSubflowDelegations(
   const artifacts: SubflowArtifact[] = [];
   const unresolved: SubflowTarget[] = [];
 
-  for (const target of collectSubflowTargets(document)) {
+  for (const target of collectSubflowReferences(document)) {
     const provided = availableDocuments.find(
       (candidate) =>
         candidate.document?.namespace === target.namespace && candidate.document?.name === target.name,

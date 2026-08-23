@@ -31,9 +31,11 @@ import {
   addTopLevelAiTask,
   addTopLevelTask,
   autoLayoutFlow,
+  collectSubflowReferences,
   connectTopLevelTasks,
   createAiSubflowDocument,
   createFlowGraph,
+  detectMissingSubflowReferences,
   duplicateTopLevelTask,
   disconnectTopLevelTasks,
   getBreadcrumbPath,
@@ -1695,5 +1697,74 @@ describe('buildLibraryRows (Task 34 — duplicate sidebar row)', () => {
     expect(rows[0]).toMatchObject({ id: 'wf-z', isSaved: true });
     expect(rows[1]).toMatchObject({ id: 'wf-new', isActive: true, isSaved: false });
     expect(rows[2]).toMatchObject({ id: 'wf-saved', isSaved: true });
+  });
+});
+
+describe('sub-flow reference diagnostics (Task 39)', () => {
+  const parentSpec = `document:
+  dsl: "1.0.3"
+  namespace: default
+  name: orchestrator
+  version: "0.1.0"
+do:
+  - callBilling:
+      run:
+        workflow:
+          namespace: billing
+          name: billing-process
+          version: "0.1.0"
+  - callLlm:
+      run:
+        workflow:
+          namespace: ai
+          name: prompt-llm
+          version: "0.1.0"
+`;
+  const billingDocument: WorkflowDocument = {
+    document: { dsl: '1.0.3', namespace: 'billing', name: 'billing-process', version: '0.1.0' },
+    do: [{ initSubflow: { set: { subflowReady: true } } }],
+  };
+
+  it('flags user sub-flow targets without a workspace document', () => {
+    const document = parseWorkflow(parentSpec).document;
+    const issues = detectMissingSubflowReferences(document);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].path).toBe('/do/callBilling');
+    expect(issues[0].message).toContain('billing/billing-process');
+  });
+
+  it('exempts provided documents and canonical AI contracts', () => {
+    const document = parseWorkflow(parentSpec).document;
+    const issues = detectMissingSubflowReferences(document, [billingDocument]);
+    expect(issues).toEqual([]);
+  });
+
+  it('reports nested delegations under their top-level task path', () => {
+    const nestedSpec = `document:
+  dsl: "1.0.3"
+  namespace: default
+  name: nested
+  version: "0.1.0"
+do:
+  - processBatch:
+      do:
+        - innerCall:
+            run:
+              workflow:
+                namespace: billing
+                name: billing-process
+                version: "0.1.0"
+`;
+    const document = parseWorkflow(nestedSpec).document;
+    const issues = detectMissingSubflowReferences(document);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].path).toBe('/do/processBatch');
+    const references = collectSubflowReferences(document);
+    expect(references).toHaveLength(1);
+    expect(references[0]).toMatchObject({
+      namespace: 'billing',
+      name: 'billing-process',
+      topLevelName: 'processBatch',
+    });
   });
 });

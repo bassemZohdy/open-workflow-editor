@@ -89,6 +89,30 @@ test('demo engine executes the scaffolded sub-flow document', async ({ page }) =
 });
 
 // ---------------------------------------------------------------------------
+// Task 39: problems panel flags unresolved sub-flow references
+// ---------------------------------------------------------------------------
+
+test('problems panel flags an unresolved sub-flow target and selects its task', async ({ page }) => {
+  // Configure a run task as a sub-flow delegation WITHOUT scaffolding a
+  // document — the workspace has no matching sub-flow.
+  await page.getByRole('button', { name: 'Add Run JavaScript task' }).press('Enter');
+  await page.getByLabel('Run mode').selectOption('subflow');
+  await page.getByLabel('Sub-flow name', { exact: true }).fill('billing-process');
+  await page.getByLabel('Sub-flow name', { exact: true }).blur();
+
+  await page.keyboard.press('Control+Shift+M');
+  const panel = page.locator('.problems-panel');
+  await expect(panel).toHaveClass(/open/);
+  await expect(panel).toContainText('billing-process');
+  await expect(panel).toContainText('has no document in the workspace');
+
+  // Clicking the warning selects the delegating task (its Inspector opens).
+  await panel.locator('.problems-item').filter({ hasText: 'billing-process' }).click();
+  await expect(page.getByLabel('Run mode')).toBeVisible();
+  await expect(page.getByLabel('Sub-flow name', { exact: true })).toHaveValue('billing-process');
+});
+
+// ---------------------------------------------------------------------------
 // Task 36: full right-rail collapse renders an icon strip without clipped text
 // ---------------------------------------------------------------------------
 

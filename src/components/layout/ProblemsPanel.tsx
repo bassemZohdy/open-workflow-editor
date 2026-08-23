@@ -5,7 +5,7 @@ export interface ProblemItem {
   message: string;
   path: string;
   severity: 'error' | 'warning' | 'info';
-  kind: 'task' | 'schema' | 'graph';
+  kind: 'task' | 'schema' | 'graph' | 'subflow';
   /** Line (0-based) when the problem can be located inside the specification. */
   line?: number;
   onSelect: () => void;
