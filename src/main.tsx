@@ -1411,13 +1411,24 @@ function App() {
 
   const handleOpenSubflow = useCallback(
     (name: string, namespace = 'dubai-government', version = '1.0.0') => {
+      // Same-name sub-flows in different namespaces are distinct documents:
+      // match by namespace when the caller supplies one (unknown namespace on
+      // the candidate falls back to a name match for legacy/edge documents).
+      const matchesNamespace = (candidateNamespace: string | undefined) =>
+        namespace === undefined || candidateNamespace === undefined || candidateNamespace === namespace;
       // If already open in tabs
       const matchingTab = openTabIds.find((tabId) => {
-        if (tabId === workflowId && workflowName === name) return true;
-        const mem = tabDocumentsRef.current.get(tabId);
-        if (mem?.name === name) return true;
+        const mem =
+          tabId === workflowId ? { name: workflowName, document } : tabDocumentsRef.current.get(tabId);
+        if (mem?.name === name) return matchesNamespace(mem.document?.document?.namespace);
         const rec = workflowRecords.find((r) => r.id === tabId);
-        return rec?.name === name;
+        if (rec?.name !== name) return false;
+        if (namespace === undefined) return true;
+        try {
+          return parseWorkflow(rec.specification).document.document?.namespace === namespace;
+        } catch {
+          return true;
+        }
       });
       if (matchingTab) {
         handleSelectTab(matchingTab);
@@ -1427,9 +1438,15 @@ function App() {
       }
 
       stashActiveTab();
-      const existing = workflowRecords.find(
-        (r) => r.name.toLowerCase() === name.toLowerCase() || r.id === name,
-      );
+      const existing = workflowRecords.find((record) => {
+        if (record.name.toLowerCase() !== name.toLowerCase() && record.id !== name) return false;
+        if (namespace === undefined) return true;
+        try {
+          return parseWorkflow(record.specification).document.document?.namespace === namespace;
+        } catch {
+          return true;
+        }
+      });
       if (existing) {
         setOpenTabIds((prev) => (prev.includes(existing.id) ? prev : [...prev, existing.id]));
         openWorkflowRecord(existing);

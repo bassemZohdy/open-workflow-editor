@@ -6,6 +6,16 @@ test.beforeEach(async ({ page }) => {
   await page.reload();
 });
 
+async function expectSpecToContain(page, text) {
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => (window.__specEditorView ? window.__specEditorView.state.doc.toString() : '')),
+      { timeout: 8000 },
+    )
+    .toContain(text);
+}
+
 // ---------------------------------------------------------------------------
 // Task 35: deployment bundle ships referenced AI sub-flow artifacts
 // ---------------------------------------------------------------------------
@@ -71,6 +81,34 @@ test('deployment bundle ships a scaffolded user sub-flow document', async ({ pag
   // The user sub-flow artifact previews in its own tab (Task 44).
   await page.getByRole('button', { name: /subflows\/.*billing-process\.yaml/ }).click();
   await expect(page.locator('pre')).toContainText('subflowReady: true');
+});
+
+// ---------------------------------------------------------------------------
+// Task 52: sub-flow open/scaffold matching is namespace-aware
+// ---------------------------------------------------------------------------
+
+test('scaffolds same-named sub-flows in different namespaces as distinct tabs', async ({ page }) => {
+  await page.getByRole('button', { name: 'Add Run JavaScript task' }).press('Enter');
+  await page.getByLabel('Run mode').selectOption('subflow');
+  await page.getByLabel('Sub-flow name', { exact: true }).fill('billing-process');
+  await page.getByLabel('Sub-flow namespace').fill('dubai-government');
+  await page.getByLabel('Sub-flow namespace').blur();
+  await page.getByRole('button', { name: /Scaffold.*billing-process/i }).click();
+  await expect(page.locator('.workflow-name-input')).toHaveValue('billing-process');
+  await expect(page.locator('.document-tab')).toHaveCount(2);
+
+  // Back on the parent, scaffold the SAME name under a different namespace:
+  // a distinct document must open as a NEW tab (not switch to the other ns).
+  await page.locator('.document-tab').first().click();
+  await expect(page.locator('.workflow-name-input')).toHaveValue('rta-nol-travel-pass-renewal');
+  await page.getByRole('group', { name: 'run task runTask' }).click();
+  await page.getByLabel('Sub-flow namespace').fill('payments');
+  await page.getByLabel('Sub-flow namespace').blur();
+  await page.getByRole('button', { name: /Scaffold.*billing-process/i }).click();
+  await expect(page.locator('.document-tab')).toHaveCount(3);
+  await expect(page.locator('.document-tab').nth(2)).toHaveClass(/active/);
+  await page.getByRole('button', { name: 'Specification' }).click();
+  await expectSpecToContain(page, 'namespace: payments');
 });
 
 // ---------------------------------------------------------------------------
