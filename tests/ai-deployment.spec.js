@@ -28,15 +28,40 @@ test('deployment bundle ships AI sub-flow artifacts for AI delegations', async (
   await expect(bundleDialog).toBeVisible();
 
   await page.getByRole('button', { name: 'Dockerfile', exact: true }).click();
-  await expect(page.locator('pre')).toContainText('COPY ai/ /app/ai/');
-  await expect(page.locator('pre')).toContainText('WORKFLOW_SUBFLOW_PATH=/app/ai');
+  await expect(page.locator('pre')).toContainText('COPY subflows/ /app/subflows/');
+  await expect(page.locator('pre')).toContainText('WORKFLOW_SUBFLOW_PATH=/app/subflows');
 
   await page.getByRole('button', { name: 'deployment.yaml', exact: true }).click();
-  await expect(page.locator('pre')).toContainText('ai/prompt-llm.yaml: |');
-  await expect(page.locator('pre')).toContainText('subPath: ai/prompt-llm.yaml');
+  await expect(page.locator('pre')).toContainText('subflows/ai/prompt-llm.yaml: |');
+  await expect(page.locator('pre')).toContainText('subPath: subflows/ai/prompt-llm.yaml');
 
   await page.getByRole('button', { name: 'README.md', exact: true }).click();
-  await expect(page.locator('pre')).toContainText('AI Sub-flows');
+  await expect(page.locator('pre')).toContainText('Sub-flows');
+});
+
+// ---------------------------------------------------------------------------
+// Task 37: bundle ships user sub-flow documents from the workspace
+// ---------------------------------------------------------------------------
+
+test('deployment bundle ships a scaffolded user sub-flow document', async ({ page }) => {
+  // Scaffold a non-AI sub-flow from a run task's inspector.
+  await page.getByRole('button', { name: 'Add Run JavaScript task' }).press('Enter');
+  await page.getByLabel('Run mode').selectOption('subflow');
+  await page.getByLabel('Sub-flow name', { exact: true }).fill('billing-process');
+  await page.getByLabel('Sub-flow name', { exact: true }).blur();
+  await page.getByRole('button', { name: /Scaffold.*billing-process/i }).click();
+  await expect(page.locator('.workflow-name-input')).toHaveValue('billing-process');
+  await expect(page.locator('.document-tab')).toHaveCount(2);
+
+  // Back on the parent, the bundle ships the scaffolded sub-flow document.
+  await page.locator('.document-tab').first().click();
+  await page.getByRole('button', { name: 'Deploy bundle' }).click();
+  const bundleDialog = page.getByRole('dialog', { name: 'Workflow Deployment Bundle' });
+  await expect(bundleDialog).toBeVisible();
+  await page.getByRole('button', { name: 'deployment.yaml', exact: true }).click();
+  await expect(page.locator('pre')).toContainText('subflows/');
+  await expect(page.locator('pre')).toContainText('billing-process.yaml: |');
+  await expect(page.locator('pre')).toContainText('subflowReady: true');
 });
 
 // ---------------------------------------------------------------------------

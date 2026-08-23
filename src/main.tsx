@@ -404,6 +404,24 @@ function App() {
       }
     >
   >(new Map());
+  /**
+   * Workspace sub-flow documents eligible for the deployment bundle: open tab
+   * documents (live edits win) plus parsed saved library records. Rebuilt when
+   * the dialog opens so the ref snapshot is current.
+   */
+  const subflowDocuments = useMemo<WorkflowDocument[]>(() => {
+    if (!showDeploymentBundle) return [];
+    const docs = [...tabDocumentsRef.current.values()].map((memory) => memory.document);
+    for (const record of workflowRecords) {
+      try {
+        docs.push(parseWorkflow(record.specification).document);
+      } catch {
+        // Ignore unparsable library entries; they cannot resolve sub-flows.
+      }
+    }
+    return docs;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showDeploymentBundle, workflowRecords, workflowId, specText, specFormat]);
   const workflowPersistence = useMemo(
     () => assertWorkflowPersistence(createWorkflowPersistence(window.localStorage, WORKFLOW_LIBRARY_KEY)),
     [],
@@ -2849,6 +2867,7 @@ do:
         onClose={() => setShowDeploymentBundle(false)}
         specYaml={specFormat === 'yaml' ? specText : serializeWorkflow(document, 'yaml')}
         workflowName={workflowName}
+        availableDocuments={subflowDocuments}
       />
       <CommandPalette
         open={commandPaletteOpen}

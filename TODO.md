@@ -16,6 +16,7 @@ Build a real, production-ready "VS Code for Open Workflow Specifications": a bro
 | 34  | Fix duplicate Workflows-sidebar row for the active unsaved tab      | `[x]`  | FIXED: extracted `libraryRows` into pure `workflowStore.buildLibraryRows` — rows fold into a `Map` keyed by id (records win, then stashed tabs, then active fallback) so every id renders exactly once; 4 unit tests + 1 E2E regression (create → edit → switch away → back). See Review findings below. |
 | 35  | Deployment bundle ships referenced AI sub-flows                     | `[x]`  | DONE: `findAiDelegations` scans the workflow (incl. nested `for`/`fork`/`try`/`catch`) for `run.workflow` → `ai` sub-flows; bundle now emits `ai/<name>.yaml` artifacts — Dockerfile `COPY ai/` + `WORKFLOW_SUBFLOW_PATH`, ConfigMap keys with `items`/`subPath` mounts, README section; 2 unit tests.   |
 | 36  | Right-rail collapsed icon strip renders clipped "☰ Inspector" text | `[x]`  | FIXED: CSS specificity bug — see Review findings below.                                                                                                                                                                                                                                                  |
+| 37  | Deployment bundle ships user sub-flow documents too                 | `[x]`  | DONE: `findSubflowDelegations` materializes every `run.workflow` target from workspace documents (open tabs + saved records; live edits win, incl. AI), canonical AI-contract fallback, unresolved-references README note; unified `subflows/<ns>/<name>.yaml` layout; 4 unit tests + 1 E2E.             |
 
 Task 16 was implemented via valid-DSL composition (sub-flow delegation + catalog-backed providers, per `docs/ai-tasks.md`) instead of waiting for native DSL keys; the native types remain a future option.
 
@@ -59,14 +60,15 @@ Live dev-server review (Task 33's demo-engine AI delegation fix, since committed
 - **Fix:** extracted the fold into pure `workflowStore.buildLibraryRows` — rows collapse into a single `Map<id, row>` (saved records win, then stashed tabs, then the active fallback), guaranteeing exactly one row per id regardless of source order; the `libraryOrder` sort is applied to the deduped values. 4 unit tests (stashed active tab, record-vs-stash precedence, multi-tab uniqueness, order fallback) + 1 E2E regression test (create → edit → switch away → back: one row, no same-key console errors).
 - **New bug — FIXED (Task 36): right-rail collapse-to-icon-strip renders clipped text instead of an icon.** Reported by the user ("right drawer minimize and collapse and expand not working"). Repro: select a task (Inspector populates), collapse Inspector, then collapse Runtime too — the rail is meant to shrink to a ~29px icon-only strip (`.editor-layout.right-rail-collapsed`), but the Inspector half rendered `☰  Inspector` clipped to `INSPEC`, floating disconnected from its icon button. Root cause: two CSS rules both set `.inspector-head::after { content: ... }` and matched simultaneously in this state — the full-rail-collapse rule (`.editor-layout.right-rail-collapsed .inspector-head::after`, `content: '☰'`, 3 classes) and the individually-collapsed-panel rule (`.right-rail > .inspector.inspector-collapsed .inspector-head::after`, `content: '☰  Inspector'`, 4 classes) — since `inspectorCollapsed` is `true` in both states, both selectors' classes are present on the DOM, and the higher-specificity 4-class rule won even inside the narrow strip it wasn't designed for. The Runtime half didn't have a competing `content` rule for its "still open" case, which is why only Inspector broke. **Fix:** `src/styles.css` — scoped the full-collapse Inspector-icon rule to `.editor-layout.right-rail-collapsed .right-rail > .inspector.inspector-collapsed .inspector-head::after` (6 classes), outweighing the individual-collapse rule so the plain `☰` wins whenever the whole rail is collapsed. Verified live: expand/collapse cycle now renders a clean icon strip with no clipped text and no console errors.
 - **Gap closed (Task 35): deployment bundle did not ship referenced AI sub-flows.** `generateDeploymentBundle` embedded only the parent `workflow.yaml`, so a workflow delegating via `run.workflow` → `ai/*` deployed with dangling references. Now `findAiDelegations` walks the parsed document (top-level `do` plus nested `for`/`fork.branches`/`try`/`catch.do`) collecting canonical AI sub-flow targets (deduped by name), and the bundle emits `ai/<name>.yaml` artifacts: Dockerfile `COPY ai/ /app/ai/` + `ENV WORKFLOW_SUBFLOW_PATH=/app/ai`, ConfigMap keys (`ai/<name>.yaml`) with volume `items` + `subPath` file mounts and the env var in the Deployment, and a README "AI Sub-flows" section (canonical-contract note for customized sub-flows). Workflows without AI delegations are unchanged (verified: no `ai/` references emitted). 2 unit tests.
+- **Gap closed (Task 37): bundle still dropped user sub-flow references.** Task 35 handled `ai/*` canonically only — a scaffolded `billing-process` (namespace `dubai-government` etc.) deployed with a dangling reference. Now `findSubflowDelegations` collects ALL `run.workflow` targets and materializes each from workspace documents: `availableDocuments` = open-tab documents + parsed saved library records (matched by `namespace`+`name`), so your edited sub-flow (AI ones included) ships verbatim; AI targets without a document fall back to the canonical builder; anything else goes into an "Unresolved sub-flow references" README note. Layout unified to `subflows/<namespace>/<name>.yaml` (`COPY subflows/`, `WORKFLOW_SUBFLOW_PATH=/app/subflows`, ConfigMap keys + `items`/`subPath` mounts; Task 35's own `ai/` layout was still un-consumed). 4 unit tests + 1 E2E (scaffold → bundle). Caught along the way: the first main.tsx wiring hit a TDZ error (`tabDocumentsRef` read before its declaration) — the dialog documents memo now sits after the ref.
 
 ---
 
 ## Verification Commands
 
 ```bash
-npm test             # Vitest unit tests (82)
-npm run test:browser # Playwright E2E tests (66, parallel workers)
+npm test             # Vitest unit tests (84)
+npm run test:browser # Playwright E2E tests (67, parallel workers)
 npm run typecheck    # tsc --noEmit
 npm run lint         # ESLint
 npm run format:check # Prettier
@@ -78,8 +80,8 @@ npm run build        # Production build
 - [x] `npm run typecheck` — clean.
 - [x] `npm run lint` — clean.
 - [x] `npm run format:check` — clean.
-- [x] `npm test` — **82 unit tests pass** (13 in `src/ideParity.test.ts`, +4 breadcrumb +2 reorder, +4 Task 16 AI builders, +5 gateway AI endpoints, +2 demo AI delegation, +4 Task 34 `buildLibraryRows`, +2 Task 35 AI sub-flow bundle).
-- [x] `npm run test:browser` — **66 Playwright E2E tests pass** (parallel workers; +1 Task 34 regression, +2 Task 35/36: AI bundle artifacts, rail icon strip).
+- [x] `npm test` — **84 unit tests pass** (13 in `src/ideParity.test.ts`, +4 breadcrumb +2 reorder, +4 Task 16 AI builders, +5 gateway AI endpoints, +2 demo AI delegation, +4 Task 34 `buildLibraryRows`, +6 Task 35/37 deployment bundle).
+- [x] `npm run test:browser` — **67 Playwright E2E tests pass** (parallel workers; +1 Task 34 regression, +3 Task 35/36/37: AI bundle artifacts, rail icon strip, scaffolded user sub-flow).
 - [x] `npm run build` — production bundle builds.
 
 ---
@@ -115,6 +117,7 @@ npm run build        # Production build
 | 34  | Duplicate sidebar row for the active unsaved tab     | `libraryRows` extracted into pure `workflowStore.buildLibraryRows`: `Map<id, row>` fold (records win, then stashed tabs, then active fallback) → exactly one row per id; 4 unit tests + 1 E2E regression (create → edit → switch away → back)                                                  |
 | 35  | Deployment bundle ships referenced AI sub-flows      | `findAiDelegations` (walks `do`/`for`/`fork`/`try`/`catch` containers, dedupes by sub-flow name) + bundle emits `ai/<name>.yaml` — Dockerfile `COPY ai/` + `WORKFLOW_SUBFLOW_PATH`, ConfigMap keys with `items`/`subPath` mounts, README section; 2 unit tests; untouched for non-AI workflows |
 | 36  | Right-rail collapsed strip clips "☰ Inspector" text | CSS specificity bug — full-collapse icon rule now scoped to 6 classes so it wins over the individual-panel-collapse rule; verified live (expand/collapse cycle clean)                                                                                                                          |
+| 37  | Deployment bundle ships user sub-flow documents      | `findSubflowDelegations` materializes every `run.workflow` target from workspace docs (tabs + saved records, matched by ns+name; edits win, incl. AI), canonical AI fallback, unresolved note; unified `subflows/<ns>/<name>.yaml`; 4 unit + 1 E2E                                             |
 
 ### VS Code parity round 1 (Tasks 1–9)
 

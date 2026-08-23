@@ -1,11 +1,14 @@
 import { useState, useMemo } from 'react';
 import { generateDeploymentBundle, type DeploymentBundle } from '../../deploymentBundle';
+import type { WorkflowDocument } from '../../types';
 
 export interface DeploymentBundleDialogProps {
   open: boolean;
   onClose: () => void;
   specYaml: string;
   workflowName: string;
+  /** Workspace sub-flow documents (open tabs + saved workflows) eligible for the bundle. */
+  availableDocuments?: WorkflowDocument[];
 }
 
 type FileTabKey = 'workflow.yaml' | 'Dockerfile' | 'deployment.yaml' | 'README.md';
@@ -15,13 +18,14 @@ export function DeploymentBundleDialog({
   onClose,
   specYaml,
   workflowName,
+  availableDocuments = [],
 }: DeploymentBundleDialogProps) {
   const [activeTab, setActiveTab] = useState<FileTabKey>('deployment.yaml');
   const [copyNotice, setCopyNotice] = useState('');
 
   const bundle: DeploymentBundle = useMemo(
-    () => generateDeploymentBundle(specYaml, workflowName),
-    [specYaml, workflowName],
+    () => generateDeploymentBundle(specYaml, workflowName, availableDocuments),
+    [specYaml, workflowName, availableDocuments],
   );
 
   if (!open) return null;

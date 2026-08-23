@@ -1,5 +1,5 @@
 import { AI_TASK_SPECS, createAiSubflowDocument, parseWorkflow, serializeWorkflow } from './workflowModel';
-import type { TaskDefinition, TaskItem } from './types';
+import type { TaskDefinition, TaskItem, WorkflowDocument } from './types';
 
 export interface DeploymentBundle {
   workflowName: string;
@@ -7,43 +7,49 @@ export interface DeploymentBundle {
   dockerfile: string;
   kubernetesYaml: string;
   readmeMd: string;
-  /** Canonical runnable definitions for every referenced AI sub-flow. */
-  aiSubflows: AiSubflowArtifact[];
+  /** Runnable sub-flow definitions shipped as `subflows/<namespace>/<name>.yaml`. */
+  subflows: SubflowArtifact[];
+  /** Referenced sub-flows with no available document and no canonical builder. */
+  unresolvedSubflowTargets: SubflowTarget[];
 }
 
-export interface AiSubflowArtifact {
-  /** Sub-flow name (`prompt-llm` or `ai-agent`). */
+export interface SubflowTarget {
+  namespace: string;
   name: string;
-  /** AI task kind used to build the canonical sub-flow document. */
-  kind: 'llm-call' | 'ai-agent-call';
-  /** Serialized `ai/<name>.yaml` content (canonical catalog-backed contract). */
+  version?: string;
+}
+
+export interface SubflowArtifact extends SubflowTarget {
+  /** `document` = the user's document (open tab / saved workflow); `ai-contract` = canonical AI builder. */
+  source: 'document' | 'ai-contract';
+  /** Serialized `subflows/<namespace>/<name>.yaml` content. */
   yaml: string;
 }
 
-/**
- * Collect the AI sub-flows a workflow delegates to (`run.workflow` in the `ai`
- * namespace), walking every task container (`do`/`for`, `fork.branches`,
- * `try`, `catch.do`). Each referenced sub-flow yields exactly one artifact
- * (deduped by name); only canonical names (`AI_TASK_SPECS`) are materialized
- * — exotic names are reported via the README instead of guessing content.
- */
-export function findAiDelegations(specYaml: string): AiSubflowArtifact[] {
-  let document;
-  try {
-    document = parseWorkflow(specYaml).document;
-  } catch {
-    return [];
-  }
+export interface SubflowCollection {
+  artifacts: SubflowArtifact[];
+  unresolved: SubflowTarget[];
+}
 
-  const found = new Map<string, 'llm-call' | 'ai-agent-call'>();
+/**
+ * Collect every sub-flow a workflow delegates to (`run.workflow`), walking all
+ * task containers (`do`/`for`, `fork.branches`, `try`, `catch.do`) and
+ * deduping by `${namespace}/${name}`.
+ */
+function collectSubflowTargets(document: WorkflowDocument): SubflowTarget[] {
+  const seen = new Set<string>();
+  const targets: SubflowTarget[] = [];
   const visit = (list: TaskItem[] | undefined) => {
     for (const item of list ?? []) {
       const taskName = Object.keys(item)[0];
       const task: TaskDefinition = item[taskName];
       const workflow = task.run?.workflow;
-      if (workflow?.namespace === 'ai' && workflow.name) {
-        const spec = AI_TASK_SPECS.find((candidate) => candidate.subflowName === workflow.name);
-        if (spec && !found.has(workflow.name)) found.set(workflow.name, spec.kind);
+      if (workflow?.namespace && workflow.name) {
+        const key = `${workflow.namespace}/${workflow.name}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          targets.push({ namespace: workflow.namespace, name: workflow.name, version: workflow.version });
+        }
       }
       visit(task.do);
       visit(task.fork?.branches);
@@ -52,14 +58,60 @@ export function findAiDelegations(specYaml: string): AiSubflowArtifact[] {
     }
   };
   visit(document.do);
+  return targets.sort((left, right) =>
+    `${left.namespace}/${left.name}`.localeCompare(`${right.namespace}/${right.name}`),
+  );
+}
 
-  return [...found.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([name, kind]) => ({
-      name,
-      kind,
-      yaml: serializeWorkflow(createAiSubflowDocument(kind), 'yaml'),
-    }));
+/**
+ * Materialize the runnable sub-flow definitions for a workflow's delegations:
+ * - a document from the workspace matching `namespace` + `name` wins (the
+ *   user's live sub-flow, including edits);
+ * - otherwise AI sub-flows fall back to the canonical catalog-backed builder;
+ * - anything else stays `unresolved` (reported in the bundle README).
+ */
+export function findSubflowDelegations(
+  specYaml: string,
+  availableDocuments: readonly WorkflowDocument[] = [],
+): SubflowCollection {
+  let document: WorkflowDocument;
+  try {
+    document = parseWorkflow(specYaml).document;
+  } catch {
+    return { artifacts: [], unresolved: [] };
+  }
+
+  const artifacts: SubflowArtifact[] = [];
+  const unresolved: SubflowTarget[] = [];
+
+  for (const target of collectSubflowTargets(document)) {
+    const provided = availableDocuments.find(
+      (candidate) =>
+        candidate.document?.namespace === target.namespace && candidate.document?.name === target.name,
+    );
+    if (provided) {
+      artifacts.push({
+        ...target,
+        source: 'document',
+        yaml: serializeWorkflow(provided, 'yaml'),
+      });
+      continue;
+    }
+    const aiSpec = AI_TASK_SPECS.find(
+      (candidate) => candidate.subflowNamespace === target.namespace && candidate.subflowName === target.name,
+    );
+    if (aiSpec) {
+      artifacts.push({
+        ...target,
+        source: 'ai-contract',
+        yaml: serializeWorkflow(createAiSubflowDocument(aiSpec.kind), 'yaml'),
+      });
+      continue;
+    }
+    unresolved.push(target);
+  }
+
+  return { artifacts, unresolved };
 }
 
 const indentYaml = (yaml: string): string =>
@@ -68,7 +120,15 @@ const indentYaml = (yaml: string): string =>
     .map((line) => (line.trim() ? `    ${line}` : line))
     .join('\n');
 
-export function generateDeploymentBundle(specYaml: string, workflowName = 'workflow'): DeploymentBundle {
+const subflowKey = (target: SubflowTarget): string => `subflows/${target.namespace}/${target.name}.yaml`;
+const subflowMount = (target: SubflowTarget): string =>
+  `/app/subflows/${target.namespace}/${target.name}.yaml`;
+
+export function generateDeploymentBundle(
+  specYaml: string,
+  workflowName = 'workflow',
+  availableDocuments: readonly WorkflowDocument[] = [],
+): DeploymentBundle {
   const safeName =
     (workflowName || 'workflow')
       .toLowerCase()
@@ -76,12 +136,12 @@ export function generateDeploymentBundle(specYaml: string, workflowName = 'workf
       .replace(/-+/g, '-')
       .replace(/^-|-$/g, '') || 'workflow';
 
-  const aiSubflows = findAiDelegations(specYaml);
+  const { artifacts, unresolved } = findSubflowDelegations(specYaml, availableDocuments);
   const indentedSpec = indentYaml(specYaml);
-  const aiSubflowBlock = aiSubflows
-    .map((artifact) => `  ai/${artifact.name}.yaml: |\n${indentYaml(artifact.yaml)}`)
+  const subflowDataBlock = artifacts
+    .map((artifact) => `  ${subflowKey(artifact)}: |\n${indentYaml(artifact.yaml)}`)
     .join('\n');
-  const aiSubflowPaths = aiSubflows.map((artifact) => `/app/ai/${artifact.name}.yaml`).join(', ');
+  const subflowMounts = artifacts.map((artifact) => subflowMount(artifact)).join(', ');
 
   const dockerfile = `# Open Workflow Specification 1.0.3 Production Runtime Container
 FROM openworkflow/runtime:1.0.3
@@ -91,10 +151,10 @@ LABEL org.opencontainers.image.title="${safeName}"
 WORKDIR /app
 COPY workflow.yaml /app/workflow.yaml
 ${
-  aiSubflows.length
-    ? `# Referenced AI sub-flow definitions (see README "AI Sub-flows")
-COPY ai/ /app/ai/
-ENV WORKFLOW_SUBFLOW_PATH=/app/ai
+  artifacts.length
+    ? `# Referenced sub-flow definitions (see README "Sub-flows")
+COPY subflows/ /app/subflows/
+ENV WORKFLOW_SUBFLOW_PATH=/app/subflows
 `
     : ''
 }ENV WORKFLOW_SPEC_PATH=/app/workflow.yaml
@@ -114,7 +174,7 @@ metadata:
 data:
   workflow.yaml: |
 ${indentedSpec}
-${aiSubflowBlock}
+${subflowDataBlock}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -143,20 +203,20 @@ spec:
             - name: WORKFLOW_SPEC_PATH
               value: /app/workflow.yaml
 ${
-  aiSubflows.length
+  artifacts.length
     ? `            - name: WORKFLOW_SUBFLOW_PATH
-              value: /app/ai
+              value: /app/subflows
 `
     : ''
 }          volumeMounts:
             - name: spec-volume
               mountPath: /app/workflow.yaml
               subPath: workflow.yaml
-${aiSubflows
+${artifacts
   .map(
     (artifact) => `            - name: spec-volume
-              mountPath: /app/ai/${artifact.name}.yaml
-              subPath: ai/${artifact.name}.yaml`,
+              mountPath: ${subflowMount(artifact)}
+              subPath: ${subflowKey(artifact)}`,
   )
   .join('\n')}          resources:
             limits:
@@ -184,10 +244,10 @@ ${aiSubflows
             items:
               - key: workflow.yaml
                 path: workflow.yaml
-${aiSubflows
+${artifacts
   .map(
-    (artifact) => `              - key: ai/${artifact.name}.yaml
-                path: ai/${artifact.name}.yaml`,
+    (artifact) => `              - key: ${subflowKey(artifact)}
+                path: ${subflowKey(artifact)}`,
   )
   .join('\n')}
 ---
@@ -208,20 +268,33 @@ spec:
       targetPort: 8080
 `;
 
-  const aiManifestBullets = aiSubflows
-    .map((artifact) => `- \`ai/${artifact.name}.yaml\` — Runnable AI sub-flow definition (contract stub)`)
+  const subflowBullets = artifacts
+    .map(
+      (artifact) =>
+        `- \`${subflowKey(artifact)}\` — ${artifact.source === 'document' ? 'your sub-flow document' : 'canonical AI contract stub (replace after customizing)'}`,
+    )
     .join('\n');
 
-  const aiSection = aiSubflows.length
+  const unresolvedNote = unresolved.length
     ? `
 
-## 4. AI Sub-flows
+> **Unresolved sub-flow references:** ${unresolved
+        .map((target) => `\`${target.namespace}/${target.name}\``)
+        .join(
+          ', ',
+        )} have no document in the workspace and no built-in contract — open/implement them (or save them into the library) before deploying, or the runtime cannot resolve these delegations.`
+    : '';
 
-This workflow delegates to AI sub-flow${aiSubflows.length > 1 ? 's' : ''} via \`run.workflow\` in the \`ai\` namespace. The bundle ships their runnable definitions and wires them into the deployed service:
+  const subflowSection = artifacts.length
+    ? `
 
-${aiSubflows.map((artifact) => `- \`ai/${artifact.name}.yaml\` for \`ai/${artifact.name}\` (\`/app/ai/${artifact.name}.yaml\`)`).join('\n')}
+## Sub-flows
 
-The Dockerfile copies the \`ai/\` directory into the image and the Kubernetes Deployment mounts each file at **${aiSubflowPaths}** with \`WORKFLOW_SUBFLOW_PATH=/app/ai\`. Sub-flow YAMLs are generated from the editor's canonical AI contracts (catalog-backed provider + runnable script stub, see \`docs/ai-tasks.md\`) — if you customized a sub-flow in the editor, replace the matching file before deploying.
+This workflow delegates via \`run.workflow\` to ${artifacts.length === 1 ? 'one sub-flow' : `${artifacts.length} sub-flows`}. The bundle ships their runnable definitions and wires them into the deployed service:
+
+${subflowBullets}
+
+The Dockerfile copies the \`subflows/\` directory into the image and the Kubernetes Deployment mounts each file under **${subflowMounts}** with \`WORKFLOW_SUBFLOW_PATH=/app/subflows\`. When a sub-flow exists as a document in the workspace (open tab or saved workflow), the bundle ships your edited version; AI sub-flows without a document fall back to the canonical contract (see \`docs/ai-tasks.md\`) — replace them before deploying if you customized them elsewhere.${unresolvedNote}
 `
     : '';
 
@@ -232,7 +305,7 @@ This bundle contains production deployment manifests for the **${workflowName}**
 ## Manifest Contents
 
 - \`workflow.yaml\` — Complete workflow specification
-${aiManifestBullets}
+${subflowBullets}
 - \`Dockerfile\` — Container build definition targeting the official runtime
 - \`deployment.yaml\` — Kubernetes ConfigMap, Deployment, and Service definitions
 
@@ -275,7 +348,7 @@ curl -X POST http://localhost:8080/runs \\
   -H "Content-Type: application/json" \\
   -d '{"inputs": {}}'
 \`\`\`
-${aiSection}`;
+${subflowSection}`;
 
   return {
     workflowName,
@@ -283,6 +356,7 @@ ${aiSection}`;
     dockerfile,
     kubernetesYaml,
     readmeMd,
-    aiSubflows,
+    subflows: artifacts,
+    unresolvedSubflowTargets: unresolved,
   };
 }

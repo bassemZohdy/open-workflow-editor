@@ -802,9 +802,10 @@ describe('workflow model adapter', () => {
     expect(bundle.kubernetesYaml).toContain('kind: Service');
     expect(bundle.readmeMd).toContain('Docker');
     expect(bundle.readmeMd).toContain('kubectl apply');
-    expect(bundle.aiSubflows).toEqual([]);
+    expect(bundle.subflows).toEqual([]);
+    expect(bundle.unresolvedSubflowTargets).toEqual([]);
     expect(bundle.dockerfile).toContain('COPY workflow.yaml /app/workflow.yaml');
-    expect(bundle.dockerfile).not.toContain('COPY ai/');
+    expect(bundle.dockerfile).not.toContain('COPY subflows/');
     expect(bundle.kubernetesYaml).not.toContain('WORKFLOW_SUBFLOW_PATH');
   });
 
@@ -814,26 +815,108 @@ describe('workflow model adapter', () => {
     expect(template).toBeDefined();
     const bundle = generateDeploymentBundle(template!.specification, 'ai-orchestration');
 
-    expect(bundle.aiSubflows.map((artifact) => artifact.name).sort()).toEqual(['ai-agent', 'prompt-llm']);
-    expect(bundle.dockerfile).toContain('COPY ai/ /app/ai/');
-    expect(bundle.dockerfile).toContain('ENV WORKFLOW_SUBFLOW_PATH=/app/ai');
-    expect(bundle.kubernetesYaml).toContain('ai/prompt-llm.yaml: |');
-    expect(bundle.kubernetesYaml).toContain('ai/ai-agent.yaml: |');
-    expect(bundle.kubernetesYaml).toContain('mountPath: /app/ai/prompt-llm.yaml');
-    expect(bundle.kubernetesYaml).toContain('subPath: ai/ai-agent.yaml');
+    expect(bundle.subflows.map((artifact) => `${artifact.namespace}/${artifact.name}`).sort()).toEqual([
+      'ai/ai-agent',
+      'ai/prompt-llm',
+    ]);
+    expect(bundle.subflows.every((artifact) => artifact.source === 'ai-contract')).toBe(true);
+    expect(bundle.unresolvedSubflowTargets).toEqual([]);
+    expect(bundle.dockerfile).toContain('COPY subflows/ /app/subflows/');
+    expect(bundle.dockerfile).toContain('ENV WORKFLOW_SUBFLOW_PATH=/app/subflows');
+    expect(bundle.dockerfile).not.toContain('COPY ai/');
+    expect(bundle.kubernetesYaml).toContain('subflows/ai/prompt-llm.yaml: |');
+    expect(bundle.kubernetesYaml).toContain('subflows/ai/ai-agent.yaml: |');
+    expect(bundle.kubernetesYaml).toContain('mountPath: /app/subflows/ai/prompt-llm.yaml');
+    expect(bundle.kubernetesYaml).toContain('subPath: subflows/ai/ai-agent.yaml');
     expect(bundle.kubernetesYaml).toContain('WORKFLOW_SUBFLOW_PATH');
-    expect(bundle.readmeMd).toContain('ai/prompt-llm.yaml');
-    expect(bundle.readmeMd).toContain('WORKFLOW_SUBFLOW_PATH=/app/ai');
+    expect(bundle.readmeMd).toContain('subflows/ai/prompt-llm.yaml');
+    expect(bundle.readmeMd).toContain('WORKFLOW_SUBFLOW_PATH=/app/subflows');
     // The bundled sub-flow YAMLs are schema-valid and catalog-backed.
-    const llm = bundle.aiSubflows.find((artifact) => artifact.name === 'prompt-llm');
+    const llm = bundle.subflows.find((artifact) => artifact.name === 'prompt-llm');
     expect(parseWorkflow(llm!.yaml).document.document?.name).toBe('prompt-llm');
     expect(llm!.yaml).toContain('ai-providers');
-    const agent = bundle.aiSubflows.find((artifact) => artifact.name === 'ai-agent');
+    const agent = bundle.subflows.find((artifact) => artifact.name === 'ai-agent');
     expect(agent!.yaml).toContain('agents');
   });
 
+  it('ships user sub-flow documents and reports unresolved references', async () => {
+    const { generateDeploymentBundle, findSubflowDelegations } = await import('./deploymentBundle');
+    const parent = `document:
+  dsl: "1.0.3"
+  namespace: default
+  name: parent-flow
+  version: "0.1.0"
+do:
+  - callBilling:
+      run:
+        workflow:
+          namespace: billing
+          name: billing-process
+          version: "0.1.0"
+  - callLlm:
+      run:
+        workflow:
+          namespace: ai
+          name: prompt-llm
+          version: "0.1.0"
+  - callMissing:
+      run:
+        workflow:
+          namespace: payments
+          name: charge-card
+          version: "0.1.0"`;
+    const billingDoc = {
+      document: { dsl: '1.0.3', namespace: 'billing', name: 'billing-process', version: '0.1.0' },
+      do: [{ chargeCustomer: { set: { customerCharged: true } } }],
+    };
+
+    const collection = findSubflowDelegations(parent, [billingDoc]);
+    expect(collection.artifacts.map((a) => `${a.namespace}/${a.name}`).sort()).toEqual([
+      'ai/prompt-llm',
+      'billing/billing-process',
+    ]);
+    const billing = collection.artifacts.find((a) => a.name === 'billing-process')!;
+    expect(billing.source).toBe('document');
+    expect(billing.yaml).toContain('customerCharged: true');
+    const llm = collection.artifacts.find((a) => a.name === 'prompt-llm')!;
+    expect(llm.source).toBe('ai-contract');
+    expect(collection.unresolved.map((t) => `${t.namespace}/${t.name}`)).toEqual(['payments/charge-card']);
+
+    const bundle = generateDeploymentBundle(parent, 'parent-flow', [billingDoc]);
+    expect(bundle.dockerfile).toContain('COPY subflows/ /app/subflows/');
+    expect(bundle.kubernetesYaml).toContain('subflows/billing/billing-process.yaml: |');
+    expect(bundle.kubernetesYaml).toContain('mountPath: /app/subflows/billing/billing-process.yaml');
+    expect(bundle.readmeMd).toContain('`payments/charge-card` have no document in the workspace');
+  });
+
+  it('a workspace document wins over the canonical AI contract', async () => {
+    const { findSubflowDelegations } = await import('./deploymentBundle');
+    const parent = `document:
+  dsl: "1.0.3"
+  namespace: default
+  name: custom-ai
+  version: "0.1.0"
+do:
+  - callLlm:
+      run:
+        workflow:
+          namespace: ai
+          name: prompt-llm
+          version: "0.1.0"`;
+    const editedLlm = {
+      document: { dsl: '1.0.3', namespace: 'ai', name: 'prompt-llm', version: '0.1.0' },
+      do: [{ switchToCompanyModel: { set: { model: 'company-gpt' } } }],
+    };
+    const collection = findSubflowDelegations(parent, [editedLlm]);
+    expect(collection.artifacts).toHaveLength(1);
+    const llm = collection.artifacts[0];
+    expect(llm.source).toBe('document');
+    expect(llm.yaml).toContain('company-gpt');
+    expect(llm.yaml).not.toContain('ai-providers');
+  });
+
   it('finds AI delegations inside nested containers and dedupes by name', async () => {
-    const { findAiDelegations } = await import('./deploymentBundle');
+    const { findSubflowDelegations } = await import('./deploymentBundle');
     const nested = `document:
   dsl: "1.0.3"
   namespace: default
@@ -885,9 +968,12 @@ do:
           namespace: billing
           name: billing-process
           version: "0.1.0"`;
-    const artifacts = findAiDelegations(nested);
+    const { artifacts, unresolved } = findSubflowDelegations(nested);
     expect(artifacts.map((artifact) => artifact.name).sort()).toEqual(['ai-agent', 'prompt-llm']);
     expect(artifacts).toHaveLength(2);
+    expect(unresolved.map((target) => `${target.namespace}/${target.name}`)).toEqual([
+      'billing/billing-process',
+    ]);
   });
 
   it('streams SSE telemetry events on GET /runs/:id/events', async () => {
