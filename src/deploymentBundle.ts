@@ -2,6 +2,7 @@ import {
   AI_TASK_SPECS,
   collectSubflowReferences,
   createAiSubflowDocument,
+  findSubflowDocumentMatch,
   parseWorkflow,
   serializeWorkflow,
 } from './workflowModel';
@@ -59,10 +60,7 @@ export function findSubflowDelegations(
   const unresolved: SubflowTarget[] = [];
 
   for (const target of collectSubflowReferences(document)) {
-    const provided = availableDocuments.find(
-      (candidate) =>
-        candidate.document?.namespace === target.namespace && candidate.document?.name === target.name,
-    );
+    const provided = findSubflowDocumentMatch(availableDocuments, target);
     if (provided) {
       artifacts.push({
         ...target,

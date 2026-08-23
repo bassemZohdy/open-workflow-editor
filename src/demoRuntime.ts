@@ -1,5 +1,6 @@
 import { validate as validateWorkflow } from '@openworkflowspec/sdk';
 import { assertRuntimeAdapter } from './runtimeAdapter';
+import { findSubflowDocumentMatch } from './workflowModel';
 import type { EventFilter, TaskDefinition, TaskItem, WorkflowDocument } from './types';
 
 interface DemoTaskProgress {
@@ -404,11 +405,9 @@ async function executeTask(
   if (definition.run?.workflow) {
     const subflow = definition.run.workflow;
     // A workspace document matching the target replaces the mock: execute its
-    // task list so cross-tab orchestration simulates end-to-end.
-    const subflowDocument = run.subflowDocuments.find(
-      (candidate) =>
-        candidate.document?.namespace === subflow.namespace && candidate.document?.name === subflow.name,
-    );
+    // task list so cross-tab orchestration simulates end-to-end. Version pins
+    // win over same-named documents with other versions (Task 61).
+    const subflowDocument = findSubflowDocumentMatch(run.subflowDocuments, subflow);
     if (subflowDocument) {
       return executeSubflowDocument(subflowDocument, subflow, run, scope, name, definition);
     }

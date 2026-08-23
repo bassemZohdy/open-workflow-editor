@@ -1080,6 +1080,37 @@ export function collectSubflowReferences(document: WorkflowDocument): SubflowRef
   );
 }
 
+/** Structural target of a `run.workflow` delegation (namespace+name, optional version pin). */
+export interface SubflowTargetLike {
+  namespace?: string;
+  name?: string;
+  version?: string;
+}
+
+/**
+ * Resolve a `run.workflow` delegation target against workspace documents
+ * (open tabs / saved records). An exact `namespace` + `name` + pinned
+ * `version` match wins over same-named documents with other versions; without
+ * an exact version hit the first `namespace` + `name` document is used (the
+ * pin is advisory on legacy/edited documents, preserving prior behavior).
+ * Shared by the demo engine and the deployment bundle so both resolve
+ * delegation targets identically (Task 61).
+ */
+export function findSubflowDocumentMatch(
+  documents: readonly WorkflowDocument[],
+  target: SubflowTargetLike,
+): WorkflowDocument | undefined {
+  const byNamespaceName = (candidate: WorkflowDocument): boolean =>
+    candidate.document?.namespace === target.namespace && candidate.document?.name === target.name;
+  if (target.version) {
+    const exact = documents.find(
+      (candidate) => byNamespaceName(candidate) && candidate.document?.version === target.version,
+    );
+    if (exact) return exact;
+  }
+  return documents.find(byNamespaceName);
+}
+
 /**
  * Problem-panel warnings for `run.workflow` targets with neither a workspace
  * document (open tab / saved library) nor a canonical AI contract — the bundle
