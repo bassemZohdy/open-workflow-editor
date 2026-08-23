@@ -1425,6 +1425,20 @@ button:focus-visible,
 .runtime-retries span {
   color: #8d6b2e;
 }
+.runtime-output pre {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--line);
+  max-height: 220px;
+  overflow: auto;
+  font:
+    10px/1.55 'DM Mono',
+    monospace;
+  white-space: pre;
+  color: var(--ink);
+}
 .runtime-empty {
   grid-column: 1 / -1;
   padding: 13px 0 2px;

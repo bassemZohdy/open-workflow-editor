@@ -352,6 +352,11 @@ test('template catalog includes the AI orchestration pattern', async ({ page }) 
   await expect(logs).toContainText('Executed LLM sub-flow delegateLlm');
   await expect(logs).toContainText('Executed AI agent sub-flow delegateAgent');
   await expect(logs).toContainText('Completed local demo run');
+  // The run output section shows the produced orchestration context.
+  const output = page.locator('.runtime-output');
+  await expect(output).toBeVisible();
+  await expect(output).toContainText('llmSummary');
+  await expect(output).toContainText('agentOutcome');
 });
 
 // ---------------------------------------------------------------------------

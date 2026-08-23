@@ -284,6 +284,9 @@ export function RuntimePanel({
   const failureValue = runStatus?.failures || runStatus?.failure;
   const failureItems = Array.isArray(failureValue) ? failureValue : failureValue ? [failureValue] : [];
   const retryCount = (runStatus?.retries ?? runStatus?.retryCount) as number | undefined;
+  const runOutput = (runStatus?.output as Record<string, unknown> | undefined) ?? undefined;
+  const runOutputKeys =
+    runOutput && typeof runOutput === 'object' && !Array.isArray(runOutput) ? Object.keys(runOutput) : [];
   const status = runtimeState(runStatus);
   const completedCount = progressItems.filter((item) =>
     ['completed', 'complete'].includes(String(item.status || item.state).toLowerCase()),
@@ -646,6 +649,15 @@ export function RuntimePanel({
                       <span>{retryCount}</span>
                     </div>
                   )}
+                </div>
+              )}
+              {runOutputKeys.length > 0 && isTerminalRuntimeState(status) && (
+                <div className="runtime-output">
+                  <div className="runtime-section-head">
+                    <strong>Run output</strong>
+                    <small>{runOutputKeys.length} keys</small>
+                  </div>
+                  <pre>{JSON.stringify(runOutput, null, 2)}</pre>
                 </div>
               )}
               {runLogs && (

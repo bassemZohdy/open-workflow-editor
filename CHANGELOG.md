@@ -32,6 +32,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Demo engine executes AI delegation sub-flows** (`run.workflow` → `ai` namespace): contract-shaped results (`llmResult`/`agentResult`, prompt/goal precedence) and delegation outputs merged into context under the task name, so parent mapping steps resolve end-to-end. (Task 33)
 - Tests: suite now **76 unit / 63 E2E (parallel)**.
 
+### Added
+
+- **Runtime panel shows the final run output:** after a terminal run, a "Run output" section renders the produced run context as pretty JSON (key count + scrollable block) — previously the panel displayed timeline, failures and logs but never the values a workflow actually produced. (Task 49)
+
 ### Fixed
 
 - **Docs parity (`docs/ide-parity.md`):** the Problems-panel section now documents the **Sub-flow references** group, per-warning **Scaffold** quick action, workspace-wide reference detection, and click-to-select-and-highlight navigation; the breadcrumbs section notes the canvas highlight on selection. These surfaces shipped across Tasks 39/43/47 but the reference doc had not been refreshed. (Task 48)
