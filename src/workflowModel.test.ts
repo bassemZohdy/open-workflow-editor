@@ -828,11 +828,17 @@ describe('workflow model adapter', () => {
     expect(bundle.dockerfile).toContain('COPY subflows/ /app/subflows/');
     expect(bundle.dockerfile).toContain('ENV WORKFLOW_SUBFLOW_PATH=/app/subflows');
     expect(bundle.dockerfile).not.toContain('COPY ai/');
-    expect(bundle.kubernetesYaml).toContain('subflows/ai/prompt-llm.yaml: |');
-    expect(bundle.kubernetesYaml).toContain('subflows/ai/ai-agent.yaml: |');
+    // ConfigMap data keys are k8s-charset-safe (dot layout, Task 58);
+    // shipped file paths/mounts stay slash-layout. Safe segments pass through
+    // unchanged, so the two only differ in separator here.
+    expect(bundle.kubernetesYaml).toContain('subflows.ai.prompt-llm.yaml: |');
+    expect(bundle.kubernetesYaml).toContain('subflows.ai.ai-agent.yaml: |');
     expect(bundle.kubernetesYaml).toContain('mountPath: /app/subflows/ai/prompt-llm.yaml');
     expect(bundle.kubernetesYaml).toContain('subPath: subflows/ai/ai-agent.yaml');
     expect(bundle.kubernetesYaml).toContain('WORKFLOW_SUBFLOW_PATH');
+    expect(bundle.kubernetesYaml).toMatch(
+      /- key: subflows\.ai\.prompt-llm\.yaml\s*\n\s*path: subflows\/ai\/prompt-llm\.yaml/,
+    );
     expect(bundle.readmeMd).toContain('subflows/ai/prompt-llm.yaml');
     expect(bundle.readmeMd).toContain('WORKFLOW_SUBFLOW_PATH=/app/subflows');
     // The bundled sub-flow YAMLs are schema-valid and catalog-backed.
@@ -888,7 +894,8 @@ do:
 
     const bundle = generateDeploymentBundle(parent, 'parent-flow', [billingDoc]);
     expect(bundle.dockerfile).toContain('COPY subflows/ /app/subflows/');
-    expect(bundle.kubernetesYaml).toContain('subflows/billing/billing-process.yaml: |');
+    // ConfigMap data key uses the k8s-safe dot layout (Task 58).
+    expect(bundle.kubernetesYaml).toContain('subflows.billing.billing-process.yaml: |');
     expect(bundle.kubernetesYaml).toContain('mountPath: /app/subflows/billing/billing-process.yaml');
     expect(bundle.readmeMd).toContain('`payments/charge-card` have no document in the workspace');
   });
@@ -2027,10 +2034,16 @@ do:
     expect(manifests).toHaveLength(3);
     expect(manifests.map((manifest) => manifest.kind)).toEqual(['ConfigMap', 'Deployment', 'Service']);
 
-    const expectedKeys = [
+    // Task 58: ConfigMap `data`/`items[].key` must be k8s-charset-safe
+    // (dot layout via `subflowKey`); shipped file paths (`items[].path`,
+    // `subPath`) stay slash-layout. `workflow.yaml` is identical in both.
+    const { subflowKey } = await import('./deploymentBundle');
+    const expectedKeys = ['workflow.yaml', ...bundle.subflows.map((artifact) => subflowKey(artifact))];
+    const expectedPaths = [
       'workflow.yaml',
       ...bundle.subflows.map((artifact) => `subflows/${artifact.namespace}/${artifact.name}.yaml`),
     ];
+    expect(expectedKeys.every((key) => /^[-._a-zA-Z0-9]+$/.test(key))).toBe(true);
     const configMap = manifests[0];
     const dataKeys = Object.keys((configMap.data as Record<string, unknown>) || {});
     expect(dataKeys.sort()).toEqual([...expectedKeys].sort());
@@ -2050,7 +2063,7 @@ do:
     };
     const container = deployment.spec.template.spec.containers[0];
     const subPaths = container.volumeMounts.map((mount) => mount.subPath);
-    expect(subPaths.sort()).toEqual([...expectedKeys].sort());
+    expect(subPaths.sort()).toEqual([...expectedPaths].sort());
     bundle.subflows.forEach((artifact) => {
       expect(
         container.volumeMounts.some(
@@ -2062,7 +2075,14 @@ do:
     });
     const items = deployment.spec.template.spec.volumes[0].configMap.items;
     expect(items.map((item) => item.key).sort()).toEqual([...expectedKeys].sort());
-    expect(items.every((item) => item.key === item.path)).toBe(true);
+    // Keys (dot layout) and paths (slash layout) pair up 1:1 in order.
+    expect(
+      items.every(
+        (item) =>
+          item.path ===
+          (item.key === 'workflow.yaml' ? 'workflow.yaml' : expectedPaths[expectedKeys.indexOf(item.key)]),
+      ),
+    ).toBe(true);
     expect(container.env).toContainEqual({ name: 'WORKFLOW_SUBFLOW_PATH', value: '/app/subflows' });
   });
 

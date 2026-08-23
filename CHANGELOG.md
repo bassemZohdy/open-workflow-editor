@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+Code-review hardening round (Tasks 58–67, 69) plus a canvas multi-select fix. Suite: **157 unit / 71 E2E**.
+
+### Fixed
+
+- **Deployment bundles are `kubectl apply`-valid again:** ConfigMap `data` keys and `items[].key` for shipped sub-flows use a k8s-charset-safe dot layout (`subflows.<ns>.<name>.yaml`); file paths, `subPath` and mounts keep the slash layout. (Task 58)
+- **Sub-flow namespace/name sanitization:** `sanitizeSubflowSegment` folds hostile identifiers (bad charset, `..` traversal, over-length) into safe, distinct, deterministic keys/paths with an FNV-1a collision suffix. (Task 63)
+- **Demo-run Cancel reaches executed sub-flows:** cancellation state now lives on a `DemoRunControl` object shared by reference between parent and child runs. (Task 59)
+- **Sub-flow completion sentinels can't be clobbered:** `demo`/`executed`/`subflow` apply last; colliding user keys survive under `subflowSet`. (Task 60)
+- **Sub-flow document matching honors `version` pins:** `findSubflowDocumentMatch` (shared by demo engine + bundle) prefers exact ns+name+version over same-named documents. (Task 61)
+- **Runtime timeline labels restored for container tasks:** only `/subflow/`-segment ids render as scoped paths; `for`/`fork`/`try`/`catch` rows show the task-type label again. (Task 62)
+- **Script-task flat merge guards task-keyed outputs:** a later script result can no longer overwrite an earlier task's structured output. (Task 64)
+- **AI palette same-millisecond adds both scaffold:** monotonic, clock-rewind-tolerant request ids replace `Date.now()`. (Task 65)
+- **Strict namespace matching for sub-flow open/scaffold:** namespace-less and unparsable candidates are excluded when a namespace is specified; parse failures no longer count as matches. (Task 66)
+- **Live workspace snapshot:** `workspaceDocuments` reads the active tab's live document state instead of a commit-phase-lagged ref entry. (Task 67)
+- **Canvas Ctrl/Cmd-click multi-select works again:** React Flow v12.11.3 drops modifier-held node clicks before `onNodeClick`; a capture-phase mousedown handler now toggles controlled selection directly (Shift keeps the native path). Real-input verified: two nodes select, context menu offers "Duplicate 2 tasks".
+
+### Changed
+
+- CONTRIBUTING.md describes the actual trunk-based flow (`feat/task-<n>-<slug>` → protected `main`); the phantom `develop` branch is gone from the docs. (Task 69)
+- `editor.spec.js` task-inspector test marked `test.slow()` — four canvas→spec poll round-trips exceed the default 30s budget under full-parallel local runs.
+
 ## [0.2.0] — 2026-08-23
 
 The sub-flow lifecycle goes end-to-end: scaffold, diagnose, execute (demo engine), observe and deploy. Suite: **106 unit / 71 E2E (parallel)**.

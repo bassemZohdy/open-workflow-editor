@@ -263,6 +263,9 @@ test('switches between saved workflows from the library explorer', async ({ page
 });
 
 test('supports dedicated task inspectors for for, fork, listen, and try tasks', async ({ page }) => {
+  // Four canvas→spec round-trips, each gated by spec-editor polls — the
+  // default 30s budget doesn't survive full-parallel local runs.
+  test.slow();
   // for task
   await page.getByRole('button', { name: 'Add For each task' }).press('Enter');
   await expect(page.getByRole('group', { name: 'for task forTask' })).toBeVisible();

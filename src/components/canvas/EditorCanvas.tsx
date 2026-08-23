@@ -335,6 +335,38 @@ export function EditorCanvas({
     );
   }, [nodes, selectedId]);
 
+  // React Flow v12 quirk: a Ctrl/Cmd-held press on a node never reaches
+  // `onNodeClick` — d3-drag's filter drops ctrl/meta mousedowns and the
+  // pane's box-selection gesture swallows the click — so modifier-click
+  // multi-selection would be dead. Nodes are controlled state here, so the
+  // additive toggle is applied directly in the capture phase instead (Shift
+  // keeps React Flow's native path, which its drag filter does not block).
+  const canvasHostRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const host = canvasHostRef.current;
+    if (!host) return;
+    const onMouseDownCapture = (event: MouseEvent) => {
+      if (event.button !== 0) return;
+      if (!event.ctrlKey && !event.metaKey) return;
+      const nodeElement = (event.target as HTMLElement | null)?.closest?.(
+        '.react-flow__node-task',
+      ) as HTMLElement | null;
+      const nodeId = nodeElement?.getAttribute('data-id');
+      if (!nodeElement || !nodeId) return;
+      // Keep the pane's modifier box-selection gesture from claiming the press.
+      event.stopPropagation();
+      setNodes((current) => {
+        const wasSelected = current.some(
+          (node) => node.id === nodeId && (node as unknown as { selected?: boolean }).selected,
+        );
+        if (!wasSelected && nodeId === selectedId) setSelectedId(null);
+        return current.map((node) => (node.id === nodeId ? { ...node, selected: !wasSelected } : node));
+      });
+    };
+    host.addEventListener('mousedown', onMouseDownCapture, true);
+    return () => host.removeEventListener('mousedown', onMouseDownCapture, true);
+  }, [selectedId, setNodes]);
+
   const handleAlign = useCallback(
     (type: 'left' | 'center' | 'top' | 'distribute-v' | 'distribute-h') => {
       const targets = selectedNodes.length >= 2 ? selectedNodes : nodes.filter((n) => n.type === 'task');
@@ -431,6 +463,7 @@ export function EditorCanvas({
   return (
     <div
       className={`canvas-shell ${dropStatus !== 'idle' ? 'drag-over' : ''}`}
+      ref={canvasHostRef}
       onDrop={onDrop}
       onDragEnter={(event) => {
         setDropStatus(
