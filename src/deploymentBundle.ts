@@ -192,7 +192,8 @@ ${artifacts
               mountPath: ${subflowMount(artifact)}
               subPath: ${subflowKey(artifact)}`,
   )
-  .join('\n')}          resources:
+  .join('\n')}
+          resources:
             limits:
               cpu: "1000m"
               memory: "512Mi"

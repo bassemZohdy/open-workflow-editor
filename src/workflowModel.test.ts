@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import * as yaml from 'js-yaml';
 import { COMPLEX_WORKFLOW } from './fixtures/complexWorkflow';
 import {
   publicRuntimeConfig,
@@ -1843,5 +1844,106 @@ do:
       name: 'billing-process',
       topLevelName: 'processBatch',
     });
+  });
+});
+
+describe('deployment bundle structural validity (Task 41)', () => {
+  const parentSpec = `document:
+  dsl: "1.0.3"
+  namespace: default
+  name: validated
+  version: "0.1.0"
+do:
+  - callBilling:
+      run:
+        workflow:
+          namespace: billing
+          name: billing-process
+          version: "0.1.0"
+  - callLlm:
+      run:
+        workflow:
+          namespace: ai
+          name: prompt-llm
+          version: "0.1.0"
+`;
+  const billingDocument: WorkflowDocument = {
+    document: { dsl: '1.0.3', namespace: 'billing', name: 'billing-process', version: '0.1.0' },
+    do: [{ initSubflow: { set: { subflowReady: true } } }],
+  };
+
+  const parseManifests = (yamlText: string) =>
+    yaml.loadAll(yamlText) as Array<Record<string, unknown> & { kind?: string }>;
+
+  it('keeps ConfigMap keys, volume items and subPath mounts consistent', async () => {
+    const { generateDeploymentBundle } = await import('./deploymentBundle');
+    const bundle = generateDeploymentBundle(parentSpec, 'validated', [billingDocument]);
+    const manifests = parseManifests(bundle.kubernetesYaml);
+    expect(manifests).toHaveLength(3);
+    expect(manifests.map((manifest) => manifest.kind)).toEqual(['ConfigMap', 'Deployment', 'Service']);
+
+    const expectedKeys = [
+      'workflow.yaml',
+      ...bundle.subflows.map((artifact) => `subflows/${artifact.namespace}/${artifact.name}.yaml`),
+    ];
+    const configMap = manifests[0];
+    const dataKeys = Object.keys((configMap.data as Record<string, unknown>) || {});
+    expect(dataKeys.sort()).toEqual([...expectedKeys].sort());
+
+    const deployment = manifests[1] as {
+      spec: {
+        template: {
+          spec: {
+            containers: Array<{
+              env: unknown[];
+              volumeMounts: Array<{ subPath: string; mountPath: string }>;
+            }>;
+            volumes: Array<{ configMap: { items: Array<{ key: string; path: string }> } }>;
+          };
+        };
+      };
+    };
+    const container = deployment.spec.template.spec.containers[0];
+    const subPaths = container.volumeMounts.map((mount) => mount.subPath);
+    expect(subPaths.sort()).toEqual([...expectedKeys].sort());
+    bundle.subflows.forEach((artifact) => {
+      expect(
+        container.volumeMounts.some(
+          (mount) =>
+            mount.subPath === `subflows/${artifact.namespace}/${artifact.name}.yaml` &&
+            mount.mountPath === `/app/subflows/${artifact.namespace}/${artifact.name}.yaml`,
+        ),
+      ).toBe(true);
+    });
+    const items = deployment.spec.template.spec.volumes[0].configMap.items;
+    expect(items.map((item) => item.key).sort()).toEqual([...expectedKeys].sort());
+    expect(items.every((item) => item.key === item.path)).toBe(true);
+    expect(container.env).toContainEqual({ name: 'WORKFLOW_SUBFLOW_PATH', value: '/app/subflows' });
+  });
+
+  it('ships schema-valid sub-flow documents for both artifact sources', async () => {
+    const { generateDeploymentBundle } = await import('./deploymentBundle');
+    const bundle = generateDeploymentBundle(parentSpec, 'validated', [billingDocument]);
+    expect(bundle.subflows.map((artifact) => artifact.source).sort()).toEqual(['ai-contract', 'document']);
+    for (const artifact of bundle.subflows) {
+      const parsed = parseWorkflow(artifact.yaml);
+      expect(parsed.document.document?.namespace).toBe(artifact.namespace);
+      expect(parsed.document.document?.name).toBe(artifact.name);
+    }
+  });
+
+  it('emits the sub-flow copy line and env only when artifacts exist', async () => {
+    const { generateDeploymentBundle } = await import('./deploymentBundle');
+    const withArtifacts = generateDeploymentBundle(parentSpec, 'validated', [billingDocument]);
+    expect(withArtifacts.dockerfile).toContain('COPY subflows/ /app/subflows/');
+    const plain = generateDeploymentBundle(SAMPLE_WORKFLOW, 'plain');
+    expect(plain.dockerfile).not.toContain('COPY subflows/');
+    const plainManifests = parseManifests(plain.kubernetesYaml);
+    const plainDeployment = plainManifests[1] as {
+      spec: { template: { spec: { containers: Array<{ env: Array<{ name: string }> }> } } };
+    };
+    expect(plainDeployment.spec.template.spec.containers[0].env.map((entry) => entry.name)).not.toContain(
+      'WORKFLOW_SUBFLOW_PATH',
+    );
   });
 });
