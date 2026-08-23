@@ -1,17 +1,26 @@
 import { setTimeout } from 'node:timers';
+import { createAiProviderBridge } from './aiProviderBridge.js';
 
 /**
  * @typedef {Object} RuntimeGatewayOptions
  * @property {number} [rateLimitMax]
  * @property {number} [rateLimitWindowMs]
  * @property {string[]} [authTokens]
+ * @property {Object} [aiProviderConfig] — forwarded to createAiProviderBridge
+ * @property {Function} [createAiBridge] — injectable bridge factory (tests)
  */
 
 /**
  * @param {RuntimeGatewayOptions} [options]
  */
 export function createRuntimeGatewayHandler(options = {}) {
-  const { rateLimitMax = 120, rateLimitWindowMs = 60000, authTokens = [] } = options;
+  const {
+    rateLimitMax = 120,
+    rateLimitWindowMs = 60000,
+    authTokens = [],
+    aiProviderConfig = {},
+    createAiBridge = createAiProviderBridge,
+  } = options;
   const runs = new Map();
   const eventListeners = new Map();
   const requestHistory = new Map();
@@ -278,6 +287,53 @@ export function createRuntimeGatewayHandler(options = {}) {
       response.setHeader('content-type', 'application/json');
       response.end(JSON.stringify(runRecord.logs.join('\n')));
       recordAudit({ ip: clientIp, method: 'GET', pathname, status: 200, runId });
+      return true;
+    }
+
+    // AI provider endpoints — bridge the editor's catalog-backed AI sub-flows
+    // (`ai/prompt-llm`, `ai/ai-agent`) to a server-side provider adapter.
+    if (request.method === 'POST' && (pathname === '/ai/chat' || pathname === '/ai/agent')) {
+      const kind = pathname === '/ai/chat' ? 'chat' : 'agent';
+      const bridge = createAiBridge(aiProviderConfig);
+      if (bridge?.configurationError) {
+        response.statusCode = 503;
+        response.setHeader('content-type', 'application/json');
+        response.end(
+          JSON.stringify({
+            error: 'AI provider bridge is not configured.',
+            detail: bridge.configurationError.message,
+          }),
+        );
+        recordAudit({ ip: clientIp, method: 'POST', pathname, status: 503 });
+        return true;
+      }
+      let raw = '';
+      for await (const chunk of request) raw += chunk;
+      let body;
+      try {
+        body = JSON.parse(raw || '{}');
+        if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('not an object');
+      } catch {
+        response.statusCode = 400;
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify({ error: 'Invalid JSON payload.' }));
+        recordAudit({ ip: clientIp, method: 'POST', pathname, status: 400 });
+        return true;
+      }
+      try {
+        const result = kind === 'chat' ? await bridge.chat(body) : await bridge.runAgent(body);
+        response.statusCode = 200;
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify({ ok: true, result }));
+        recordAudit({ ip: clientIp, method: 'POST', pathname, status: 200, aiKind: kind });
+      } catch (error) {
+        response.statusCode = 502;
+        response.setHeader('content-type', 'application/json');
+        response.end(
+          JSON.stringify({ error: error instanceof Error ? error.message : 'AI provider call failed.' }),
+        );
+        recordAudit({ ip: clientIp, method: 'POST', pathname, status: 502, aiKind: kind });
+      }
       return true;
     }
 

@@ -1142,3 +1142,119 @@ describe('AI task families (Task 16)', () => {
     }
   });
 });
+
+describe('gateway AI provider endpoints (Task 32)', () => {
+  const fakeBridge = {
+    chat: async (payload: { model?: string; messages?: unknown }) => ({
+      completion: `hello ${payload.model || 'default'}`,
+      usage: { inputTokens: 1, outputTokens: 3 },
+    }),
+    runAgent: async (payload: { goal?: string }) => ({
+      steps: [{ tool: 'search', status: 'ok' }],
+      outcome: `agent: ${payload.goal || ''}`,
+    }),
+  };
+
+  const makeHandler = () => createRuntimeGatewayHandler({ createAiBridge: () => fakeBridge as never });
+
+  async function post(
+    handler: Awaited<ReturnType<typeof makeHandler>>,
+    pathname: string,
+    body: unknown,
+    method = 'POST',
+  ) {
+    const chunks: string[] = body === undefined ? [] : [JSON.stringify(body)];
+    let resStatus = 200;
+    let resBody = '';
+    const req: unknown = {
+      method,
+      url: pathname,
+      headers: {},
+      async *[Symbol.asyncIterator]() {
+        for (const chunk of chunks) yield chunk;
+      },
+    };
+    const res: unknown = {
+      statusCode: 200,
+      setHeader() {
+        /* noop */
+      },
+      end(data?: string) {
+        resBody = data || '';
+      },
+    };
+    await handler(req as never, res as never);
+    resStatus = (res as { statusCode: number }).statusCode;
+    let parsed: unknown = null;
+    try {
+      parsed = JSON.parse(resBody);
+    } catch {
+      parsed = resBody;
+    }
+    return { status: resStatus, body: parsed };
+  }
+
+  it('serves /ai/chat through the provider bridge', async () => {
+    const handler = makeHandler();
+    const result = await post(handler, '/ai/chat', {
+      model: 'gpt-x',
+      messages: [{ role: 'user', content: 'hi' }],
+    });
+    expect(result.status).toBe(200);
+    expect((result.body as { result: { completion: string } }).result.completion).toBe('hello gpt-x');
+  });
+
+  it('serves /ai/agent through the provider bridge', async () => {
+    const handler = makeHandler();
+    const result = await post(handler, '/ai/agent', { goal: 'book a table' });
+    expect(result.status).toBe(200);
+    expect((result.body as { result: { outcome: string } }).result.outcome).toBe('agent: book a table');
+  });
+
+  it('rejects invalid JSON payloads with 400', async () => {
+    const handler = makeHandler();
+    const chunks = ['not-json'];
+    let resStatus = 500;
+    let resBody = '';
+    const req: unknown = {
+      method: 'POST',
+      url: '/ai/chat',
+      headers: {},
+      async *[Symbol.asyncIterator]() {
+        for (const chunk of chunks) yield chunk;
+      },
+    };
+    const res: unknown = {
+      statusCode: 500,
+      setHeader() {
+        /* noop */
+      },
+      end(data?: string) {
+        resBody = data || '';
+      },
+    };
+    await handler(req as never, res as never);
+    resStatus = (res as { statusCode: number }).statusCode;
+    expect(resStatus).toBe(400);
+    expect(resBody).toContain('Invalid JSON');
+  });
+
+  it('returns 503 when the bridge is not configured', async () => {
+    const handler = createRuntimeGatewayHandler({
+      createAiBridge: () => ({ configurationError: new Error('no provider key') }) as never,
+    });
+    const result = await post(handler, '/ai/chat', { messages: [] });
+    expect(result.status).toBe(503);
+  });
+
+  it('writes audit entries for AI calls', async () => {
+    const handler = makeHandler();
+    await post(handler, '/ai/chat', { messages: [{ role: 'user', content: 'hi' }] });
+    const audit = (await post(handler, '/audit', undefined, 'GET')) as {
+      body: { entries: Array<{ pathname: string; aiKind?: string }> };
+    };
+    const chatEntries = audit.body.entries.filter((entry) => entry.pathname === '/ai/chat');
+    expect(chatEntries.length).toBeGreaterThan(0);
+    expect(chatEntries[0].aiKind).toBe('chat');
+  });
+});

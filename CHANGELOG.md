@@ -28,7 +28,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `workflowModel` builders: `AI_TASK_SPECS`, `createAiSubflowDocument`, `addTopLevelAiTask`; catalog-backed provider entries (`ai-providers` / `agents`).
 - Runnable contract stubs (`AI_LLM_SCRIPT`, `AI_AGENT_SCRIPT`) + server-side reference bridge `server/aiProviderBridge.js` (validation, server-only keys, 64 KiB limits).
 - `AiTaskCard` inspector card, magenta AI node styling (`ai: <subflow>`), `ai-orchestration` catalog template.
-- Tests: 4 unit + 2 E2E; suite now **69 unit / 63 E2E (parallel)**.
+- **Gateway AI endpoints** (`POST /ai/chat`, `POST /ai/agent`) on the runtime gateway — provider bridge with the same auth/rate-limit/audit envelope; `503` unconfigured / `502` provider error / `400` invalid payload. (Task 32)
+- Tests: 4 unit + 2 E2E; suite now **74 unit / 63 E2E (parallel)**.
 
 ### Fixed
 
