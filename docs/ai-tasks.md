@@ -10,12 +10,12 @@ All AI components are declared as data in `src/ai/registry.ts` — the single so
 
 **Current components:**
 
-| Kind | Label | Sub-flow | Catalog | Extension mechanisms |
-|------|-------|----------|---------|---------------------|
-| `llm-call` | LLM call | `ai/prompt-llm@0.1.0` | `ai-providers` | catalogs + subflows |
-| `ai-agent-call` | AI agent call | `ai/ai-agent@0.1.0` | `agents` | catalogs + subflows |
+| Kind              | Label           | Sub-flow                   | Catalog        | Extension mechanisms            |
+| ----------------- | --------------- | -------------------------- | -------------- | ------------------------------- |
+| `llm-call`        | LLM call        | `ai/prompt-llm@0.1.0`      | `ai-providers` | catalogs + subflows             |
+| `ai-agent-call`   | AI agent call   | `ai/ai-agent@0.1.0`        | `agents`       | catalogs + subflows             |
 | `text-classifier` | Text classifier | `ai/text-classifier@0.1.0` | `ai-providers` | catalogs + subflows + functions |
-| `text-summarizer` | Text summarizer | `ai/text-summarizer@0.1.0` | `ai-providers` | catalogs + subflows |
+| `text-summarizer` | Text summarizer | `ai/text-summarizer@0.1.0` | `ai-providers` | catalogs + subflows             |
 
 **Catalog descriptors:** each component declares a typed `AiCatalogDescriptor` (`catalogKey` + `endpoint`) — `createAiSubflowDocument` writes `use.catalogs` from the descriptor; the demo engine's mock recipes are keyed off the component's catalog shape. Settings-level provider config (Task 88) consumes the same descriptors.
 
