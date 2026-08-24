@@ -19,13 +19,11 @@ import {
   addTopLevelAiTask,
   addTopLevelTask,
   AI_PROVIDER_CATALOG,
-  AI_TASK_SPECS,
   autoLayoutFlow,
   createAiSubflowDocument,
   createFlowGraph,
   detectMissingSubflowReferences,
   duplicateTopLevelTask,
-  getAiTaskSpec,
   getBreadcrumbPath,
   getTopLevelTask,
   NEW_WORKFLOW,
@@ -36,6 +34,7 @@ import {
   serializeWorkflow,
   validateGraph,
 } from './workflowModel';
+import { getAiComponent, findAiComponentBySubflow } from './ai/registry';
 import {
   createWorkflowRecord,
   createWorkflowPersistence,
@@ -488,8 +487,8 @@ function App() {
   // tabs), otherwise the catalog-backed sub-flow is scaffolded in a new tab.
   useEffect(() => {
     if (!aiScaffoldRequest) return;
-    const spec = getAiTaskSpec(aiScaffoldRequest.kind);
-    handleOpenSubflow(spec.subflowName, spec.subflowNamespace, spec.subflowVersion);
+    const component = getAiComponent(aiScaffoldRequest.kind);
+    handleOpenSubflow(component.subflowName, component.subflowNamespace, component.subflowVersion);
     setAiScaffoldRequest(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aiScaffoldRequest?.requestId]);
@@ -1215,16 +1214,19 @@ function App() {
     // plus a scaffolded catalog-backed AI sub-flow in a new tab. The scaffold
     // runs in a post-commit effect so the parent tab is stashed with the new
     // task included (a setTimeout would capture a stale document).
-    if (taskType === 'llm-call' || taskType === 'ai-agent-call') {
-      const spec = getAiTaskSpec(taskType);
-      const next = addTopLevelAiTask(document, taskType);
+    try {
+      const aiKind = taskType as AiTaskKind;
+      const component = getAiComponent(aiKind);
+      const next = addTopLevelAiTask(document, aiKind);
       const createdName = Object.keys(next.do?.[next.do.length - 1] || {})[0];
       setSelectedId(`/do/${createdName}`);
       syncDocument(next);
-      setAiScaffoldRequest({ kind: taskType, requestId: aiScaffoldRequestSequenceRef.current!() });
-      setNotice(`Added ${spec.label} — scaffolding ${spec.subflowName} sub-flow`);
+      setAiScaffoldRequest({ kind: aiKind, requestId: aiScaffoldRequestSequenceRef.current!() });
+      setNotice(`Added ${component.label} — scaffolding ${component.subflowName} sub-flow`);
       window.setTimeout(() => setNotice(''), 2400);
       return;
+    } catch {
+      // Not an AI component — fall through to generic task add.
     }
     const next = addTopLevelTask(document, taskType);
     const createdName = Object.keys(next.do?.[next.do.length - 1] || {})[0];
@@ -1458,11 +1460,9 @@ function App() {
         return;
       }
       // AI sub-flows scaffold from their catalog-backed document builder.
-      const aiSpec = AI_TASK_SPECS.find(
-        (candidate) => candidate.subflowNamespace === namespace && candidate.subflowName === name,
-      );
-      const subflowSpec = aiSpec
-        ? serializeWorkflow(createAiSubflowDocument(aiSpec.kind), 'yaml')
+      const aiComponent = findAiComponentBySubflow(namespace, name);
+      const subflowSpec = aiComponent
+        ? serializeWorkflow(createAiSubflowDocument(aiComponent.kind), 'yaml')
         : `document:
   dsl: "1.0.3"
   namespace: "${namespace}"

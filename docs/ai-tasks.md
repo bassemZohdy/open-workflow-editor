@@ -4,6 +4,23 @@ Task 16 ships AI authoring today **without inventing new DSL keys**. Open Workfl
 
 > **Sub-flow delegation** (`run.workflow` â†’ `ai` namespace) as the primary mechanism, with a **catalog-backed provider** (`use.catalogs`) inside the sub-flow and a **runnable script contract** that production runtimes replace with the provider bridge.
 
+## Component registry (Tasks 105–108)
+
+All AI components are declared as data in `src/ai/registry.ts` — the single source of truth. Each entry specifies: kind, label, icon, sub-flow identity (namespace/name/version), catalog descriptor, script contract, and demo-engine mock recipe. Adding a new AI component = one registry entry + tests; nothing else branches on specific kinds.
+
+**Current components:**
+
+| Kind | Label | Sub-flow | Catalog | Extension mechanisms |
+|------|-------|----------|---------|---------------------|
+| `llm-call` | LLM call | `ai/prompt-llm@0.1.0` | `ai-providers` | catalogs + subflows |
+| `ai-agent-call` | AI agent call | `ai/ai-agent@0.1.0` | `agents` | catalogs + subflows |
+| `text-classifier` | Text classifier | `ai/text-classifier@0.1.0` | `ai-providers` | catalogs + subflows + functions |
+| `text-summarizer` | Text summarizer | `ai/text-summarizer@0.1.0` | `ai-providers` | catalogs + subflows |
+
+**Catalog descriptors:** each component declares a typed `AiCatalogDescriptor` (`catalogKey` + `endpoint`) — `createAiSubflowDocument` writes `use.catalogs` from the descriptor; the demo engine's mock recipes are keyed off the component's catalog shape. Settings-level provider config (Task 88) consumes the same descriptors.
+
+**Migration readiness:** registry entries carry `kind` identifiers that map 1:1 to future native keys; `createAiSubflowDocument` metadata includes `kind` for mechanical detection. When the spec defines native AI task types, a `migrateAiDelegations` function will rewrite `run.workflow → ai/*` delegations to native keys — the registry foundation makes this trivial.
+
 ## How it works
 
 | Piece                                                      | What it is                                                                                                                                                                                                                                                                                                 |

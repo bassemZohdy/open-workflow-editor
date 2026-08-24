@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo, type DragEvent } from 'react';
 import {
-  AI_TASK_SPECS,
   updateTopLevelTaskConfig,
   updateTopLevelTaskField,
   updateTopLevelTaskName,
 } from '../../workflowModel';
+import { findAiComponentBySubflow } from '../../ai/registry';
 import { AiTaskCard } from './AiTaskCard';
 import { formatError, formatJsonInput, objectToPairs, objectToCatalogEntries } from '../../formatters';
 import { taskColors } from '../../taskMeta';
@@ -156,9 +156,7 @@ export function Inspector({
   // AI delegation card: shown when a `run` task targets the `ai` namespace.
   const aiSubflowSpec = useMemo(() => {
     if (runMode !== 'subflow') return undefined;
-    return AI_TASK_SPECS.find(
-      (spec) => spec.subflowNamespace === subflowNamespace && spec.subflowName === subflowName,
-    );
+    return findAiComponentBySubflow(subflowNamespace, subflowName);
   }, [runMode, subflowName, subflowNamespace]);
 
   useEffect(() => {

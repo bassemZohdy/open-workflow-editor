@@ -45,7 +45,7 @@ export const AI_AGENT_SCRIPT = `({ input, context, catalogs }) => {
 }`;
 
 /** AI-delegation task kinds supported by the editor scaffolding. */
-export type AiTaskKind = 'llm-call' | 'ai-agent-call';
+export type AiTaskKind = 'llm-call' | 'ai-agent-call' | 'text-classifier' | 'text-summarizer';
 
 export function validateJavaScriptFunction(source: unknown): JavaScriptValidationResult {
   const code = String(source || '').trim();

@@ -1,11 +1,11 @@
 import {
-  AI_TASK_SPECS,
   collectSubflowReferences,
   createAiSubflowDocument,
   findSubflowDocumentMatch,
   parseWorkflow,
   serializeWorkflow,
 } from './workflowModel';
+import { findAiComponentBySubflow } from './ai/registry';
 import type { WorkflowDocument } from './types';
 
 export interface DeploymentBundle {
@@ -69,14 +69,12 @@ export function findSubflowDelegations(
       });
       continue;
     }
-    const aiSpec = AI_TASK_SPECS.find(
-      (candidate) => candidate.subflowNamespace === target.namespace && candidate.subflowName === target.name,
-    );
-    if (aiSpec) {
+    const aiComponent = findAiComponentBySubflow(target.namespace, target.name);
+    if (aiComponent) {
       artifacts.push({
         ...target,
         source: 'ai-contract',
-        yaml: serializeWorkflow(createAiSubflowDocument(aiSpec.kind), 'yaml'),
+        yaml: serializeWorkflow(createAiSubflowDocument(aiComponent.kind), 'yaml'),
       });
       continue;
     }

@@ -25,7 +25,9 @@ export type TaskType =
   | 'try'
   | 'wait'
   | 'llm-call'
-  | 'ai-agent-call';
+  | 'ai-agent-call'
+  | 'text-classifier'
+  | 'text-summarizer';
 
 /** Accent color tokens used by palette items and canvas nodes. */
 export type TaskColor =

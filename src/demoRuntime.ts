@@ -1,5 +1,6 @@
 import { validate as validateWorkflow } from '@openworkflowspec/sdk';
 import { assertRuntimeAdapter } from './runtimeAdapter';
+import { findAiComponentBySubflow } from './ai/registry';
 import { findSubflowDocumentMatch } from './workflowModel';
 import type { EventFilter, TaskDefinition, TaskItem, WorkflowDocument } from './types';
 
@@ -461,39 +462,32 @@ async function executeTask(
     if (subflowDocument) {
       return executeSubflowDocument(subflowDocument, subflow, run, scope, name, definition);
     }
-    // AI delegation without a document: simulate the catalog-backed sub-flow
-    // contract so the parent's mapping steps (`$context.<task>.llmResult`)
-    // resolve end-to-end.
-    if (subflow.namespace === 'ai') {
-      const isAgent = subflow.name === 'ai-agent';
-      // LLM sub-flows read the prompt first; agent sub-flows read the goal first.
-      const sourceValue = isAgent
-        ? (run.input.goal ?? run.input.prompt ?? run.context?.goal ?? run.context?.prompt ?? '')
-        : (run.input.prompt ?? run.context?.prompt ?? run.input.goal ?? run.context?.goal ?? '');
-      const source = String(sourceValue ?? '');
-      const target = `${subflow.namespace}/${subflow.name}@${subflow.version}`;
-      if (isAgent) {
-        const steps = ['search', 'compute'].map((tool) => ({ tool, status: 'ok' }));
-        addLog(run, `Executed AI agent sub-flow ${scope}${name}`, {
-          target,
-          steps: steps.length,
-        });
-        return {
-          output: { demo: true, agentResult: `[mock-agent] ${source.slice(0, 140)}`, steps },
-          next: definition.then,
-        };
+    // AI delegation without a document: fabricate the component's registered
+    // mock recipe — contract-shaped so parent mapping steps
+    // (`$context.<task>.<resultKey>`) resolve end-to-end.
+    const aiComponent = findAiComponentBySubflow(subflow.namespace, subflow.name);
+    if (aiComponent) {
+      const { mock } = aiComponent;
+      let source = '';
+      for (const key of mock.sourceKeys) {
+        const candidate = run.input[key] ?? run.context?.[key];
+        if (candidate !== undefined && candidate !== null && String(candidate).length > 0) {
+          source = String(candidate);
+          break;
+        }
       }
-      const model = String(run.input.model || 'default-model');
-      addLog(run, `Executed LLM sub-flow ${scope}${name}`, { target, model });
-      return {
-        output: {
-          demo: true,
-          llmResult: `[mock-llm] ${source.slice(0, 160)}`,
-          model,
-          usage: { inputTokens: source.length, outputTokens: 24 },
-        },
-        next: definition.then,
+      const extras = mock.extraOutput?.(source, run.input) ?? {};
+      const output: Record<string, unknown> = {
+        ...extras,
+        [mock.resultKey]: `${mock.prefix} ${source.slice(0, mock.maxEchoLength)}`,
       };
+      const meta: Record<string, unknown> = {
+        target: `${subflow.namespace}/${subflow.name}@${subflow.version}`,
+      };
+      if (typeof extras.model === 'string') meta.model = extras.model;
+      if (Array.isArray(extras.steps)) meta.steps = extras.steps.length;
+      addLog(run, `Executed ${mock.logLabel} ${scope}${name}`, meta);
+      return { output: { demo: true, ...output }, next: definition.then };
     }
     addLog(run, `Simulated sub-flow ${scope}${name}`, {
       target: `${subflow.namespace}/${subflow.name}@${subflow.version}`,

@@ -1,6 +1,7 @@
 import { buildFlatGraph, validate, GraphNodeType } from '@openworkflowspec/sdk';
 import * as yaml from 'js-yaml';
-import { AI_AGENT_SCRIPT, AI_LLM_SCRIPT, DEFAULT_JAVASCRIPT_TASK, type AiTaskKind } from './scriptContract';
+import { DEFAULT_JAVASCRIPT_TASK, type AiTaskKind } from './scriptContract';
+import { aiComponents, findAiComponentBySubflow, getAiComponent, type AiComponent } from './ai/registry';
 import type {
   CanvasPosition,
   CanvasPositions,
@@ -24,6 +25,9 @@ type SdkWorkflow = Parameters<typeof buildFlatGraph>[0];
  * from valid primitives — a `run.workflow` delegation task in the parent plus
  * a scaffolded sub-flow (`ai` namespace) that reads a catalog-backed provider
  * and executes a runnable script contract.
+ *
+ * Component declarations live in `src/ai/registry.ts`; this interface remains
+ * as the view of a component that consumers historically relied on.
  */
 export interface AiTaskSpec {
   kind: AiTaskKind;
@@ -35,66 +39,53 @@ export interface AiTaskSpec {
   subflowVersion: string;
 }
 
-export const AI_TASK_SPECS: AiTaskSpec[] = [
-  {
-    kind: 'llm-call',
-    label: 'LLM call',
-    taskName: 'aiLlmTask',
-    subflowNamespace: 'ai',
-    subflowName: 'prompt-llm',
-    subflowVersion: '0.1.0',
-  },
-  {
-    kind: 'ai-agent-call',
-    label: 'AI agent call',
-    taskName: 'aiAgentTask',
-    subflowNamespace: 'ai',
-    subflowName: 'ai-agent',
-    subflowVersion: '0.1.0',
-  },
-];
+const toAiTaskSpec = (component: AiComponent): AiTaskSpec => ({
+  kind: component.kind,
+  label: component.label,
+  taskName: component.taskName,
+  subflowNamespace: component.subflowNamespace,
+  subflowName: component.subflowName,
+  subflowVersion: component.subflowVersion,
+});
+
+/** All registered AI components, projected onto the historical spec shape. */
+export const AI_TASK_SPECS: AiTaskSpec[] = aiComponents().map(toAiTaskSpec);
 
 export function getAiTaskSpec(kind: AiTaskKind): AiTaskSpec {
-  const spec = AI_TASK_SPECS.find((candidate) => candidate.kind === kind);
-  if (!spec) throw new Error(`Unknown AI task kind: ${kind}`);
-  return spec;
+  return toAiTaskSpec(getAiComponent(kind));
 }
 
 /** The catalog key the LLM sub-flow resolves its provider endpoint from. */
 export const AI_PROVIDER_CATALOG = 'ai-providers';
 export const AI_AGENT_CATALOG = 'agents';
 
-/** Builds a schema-valid AI sub-flow document (catalog + runnable script stub). */
+/**
+ * Builds a schema-valid AI component sub-flow document from its registry
+ * entry: `use.catalogs` provider descriptor + a runnable contract task
+ * (`run.script`) → capture mapping (`set`).
+ */
 export function createAiSubflowDocument(kind: AiTaskKind): WorkflowDocument {
-  const spec = getAiTaskSpec(kind);
-  const isLlm = kind === 'llm-call';
-  const script = isLlm ? AI_LLM_SCRIPT : AI_AGENT_SCRIPT;
-  const invokeName = isLlm ? 'invokeLlm' : 'runAgent';
-  const resultKey = isLlm ? 'llmResult' : 'agentResult';
-  const resultValue = isLlm ? '${ $context.invokeLlm.completion }' : '${ $context.runAgent.outcome }';
-  const catalogKey = isLlm ? AI_PROVIDER_CATALOG : AI_AGENT_CATALOG;
-  const catalogEndpoint = isLlm ? 'https://api.example.ai/v1/chat' : 'https://api.example.ai/v1/agent';
-
+  const component = getAiComponent(kind);
   return {
     document: {
       dsl: '1.0.3',
-      namespace: spec.subflowNamespace,
-      name: spec.subflowName,
-      version: spec.subflowVersion,
+      namespace: component.subflowNamespace,
+      name: component.subflowName,
+      version: component.subflowVersion,
       metadata: { category: 'ai', kind },
     },
     use: {
       catalogs: {
-        [catalogKey]: { endpoint: catalogEndpoint },
+        [component.catalog.catalogKey]: { endpoint: component.catalog.endpoint },
       },
     },
     do: [
       {
-        [invokeName]: {
+        [component.invokeName]: {
           run: {
             script: {
               language: 'javascript',
-              code: script,
+              code: component.script,
             },
           },
           then: 'captureResult',
@@ -103,7 +94,7 @@ export function createAiSubflowDocument(kind: AiTaskKind): WorkflowDocument {
       {
         captureResult: {
           set: {
-            [resultKey]: resultValue,
+            [component.resultKey]: `\${ $context.${component.invokeName}.${component.resultPath} }`,
           },
         },
       },
@@ -1126,9 +1117,7 @@ export function detectMissingSubflowReferences(
       (candidate) =>
         candidate.document?.namespace === reference.namespace && candidate.document?.name === reference.name,
     );
-    const canonical = AI_TASK_SPECS.some(
-      (spec) => spec.subflowNamespace === reference.namespace && spec.subflowName === reference.name,
-    );
+    const canonical = findAiComponentBySubflow(reference.namespace, reference.name) !== undefined;
     if (!provided && !canonical) {
       issues.push({
         path: `/do/${reference.topLevelName}`,

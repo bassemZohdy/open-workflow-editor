@@ -1,3 +1,4 @@
+import { aiComponents, findAiComponentBySubflow } from './ai/registry';
 import type { TaskColor, TaskType } from './types';
 
 export type PaletteGroup = 'Flow control' | 'Data & logic' | 'Services' | 'Events' | 'AI';
@@ -143,25 +144,16 @@ const paletteItems: PaletteItem[] = [
   },
 
   // AI task families — composed from valid primitives (sub-flow delegation +
-  // catalog-backed provider; see workflowModel.AI_TASK_SPECS).
-  {
-    type: 'llm-call',
-    label: 'LLM call',
-    description: 'Prompt a language model',
-    icon: '◈',
-    color: 'magenta',
-    group: 'AI',
-    plan: 'Adds an AI sub-flow delegation task + scaffolds the catalog-backed provider sub-flow.',
-  },
-  {
-    type: 'ai-agent-call',
-    label: 'AI agent call',
-    description: 'Delegate to an AI agent',
-    icon: '◮',
-    color: 'magenta',
-    group: 'AI',
-    plan: 'Adds an AI sub-flow delegation task + scaffolds the agent sub-flow.',
-  },
+  // catalog-backed provider; see src/ai/registry.ts).
+  ...aiComponents().map((component) => ({
+    type: component.kind,
+    label: component.label,
+    description: component.description,
+    icon: component.icon,
+    color: 'magenta' as TaskColor,
+    group: 'AI' as PaletteGroup,
+    plan: component.plan,
+  })),
 ];
 
 const taskColors: Record<TaskType, TaskColor> = {
@@ -179,6 +171,8 @@ const taskColors: Record<TaskType, TaskColor> = {
   wait: 'purple',
   'llm-call': 'magenta',
   'ai-agent-call': 'magenta',
+  'text-classifier': 'magenta',
+  'text-summarizer': 'magenta',
 };
 
 const taskSubtitles: Record<TaskType, string> = {
@@ -196,6 +190,8 @@ const taskSubtitles: Record<TaskType, string> = {
   wait: 'Duration delay',
   'llm-call': 'LLM call',
   'ai-agent-call': 'AI agent',
+  'text-classifier': 'Text classifier',
+  'text-summarizer': 'Text summarizer',
 };
 
 export function getTaskIcon(taskType?: string, task?: Record<string, unknown>): string {
@@ -215,7 +211,8 @@ export function getTaskIcon(taskType?: string, task?: Record<string, unknown>): 
     return '↗';
   }
   if (isAiDelegation(task)) {
-    return (task?.run as { workflow?: { name?: string } })?.workflow?.name === 'ai-agent' ? '◮' : '◈';
+    const subflowName = (task?.run as { workflow?: { name?: string } })?.workflow?.name;
+    return findAiComponentBySubflow('ai', subflowName)?.icon ?? '◈';
   }
   return paletteItems.find((item) => item.type === taskType)?.icon || '↳';
 }

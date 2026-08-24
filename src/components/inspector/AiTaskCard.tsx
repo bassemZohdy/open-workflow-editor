@@ -1,7 +1,7 @@
-import type { AiTaskSpec } from '../../workflowModel';
+import type { AiComponent } from '../../ai/registry';
 
 interface AiTaskCardProps {
-  spec: AiTaskSpec;
+  spec: AiComponent;
   /** Opens the existing sub-flow tab or scaffolds the catalog-backed one. */
   onOpenSubflow: () => void;
 }
