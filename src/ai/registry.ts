@@ -12,7 +12,12 @@
  */
 
 import type { AiTaskKind } from '../scriptContract';
-import { AI_AGENT_SCRIPT, AI_LLM_SCRIPT } from '../scriptContract';
+import {
+  AI_AGENT_SCRIPT,
+  AI_LLM_SCRIPT,
+  AI_TEXT_CLASSIFIER_SCRIPT,
+  AI_TEXT_SUMMARIZER_SCRIPT,
+} from '../scriptContract';
 
 /** Where a component resolves its provider configuration from. */
 export interface AiCatalogDescriptor {
@@ -39,6 +44,8 @@ export interface AiMockRecipe {
   logLabel: string;
   /** Deterministic extra output fields beyond the echoed result. */
   extraOutput?: (source: string, input: Record<string, unknown>) => Record<string, unknown>;
+  /** Log metadata emitted alongside the mock result (replaces per-kind type-sniffing). */
+  logMeta?: (source: string, input: Record<string, unknown>) => Record<string, unknown>;
 }
 
 /** A first-class AI component assembled from spec-valid primitives. */
@@ -99,6 +106,7 @@ export const AI_COMPONENTS: AiComponent[] = [
         model: String(input.model || 'default-model'),
         usage: { inputTokens: _source.length, outputTokens: 24 },
       }),
+      logMeta: (_source, input) => ({ model: String(input.model || 'default-model') }),
     },
   },
   {
@@ -125,6 +133,7 @@ export const AI_COMPONENTS: AiComponent[] = [
       extraOutput: () => ({
         steps: ['search', 'compute'].map((tool) => ({ tool, status: 'ok' })),
       }),
+      logMeta: () => ({ steps: 2 }),
     },
   },
   {
@@ -138,22 +147,7 @@ export const AI_COMPONENTS: AiComponent[] = [
     subflowName: 'text-classifier',
     subflowVersion: '0.1.0',
     catalog: { catalogKey: 'ai-providers', endpoint: 'https://api.example.ai/v1/chat' },
-    script: `({ input, context, catalogs }) => {
-  const provider = catalogs?.['ai-providers'];
-  const text = input?.text || context?.text || '';
-  const candidateLabels = input?.labels || ['billing', 'technical', 'general'];
-  const picked = candidateLabels[String(text).length % candidateLabels.length];
-  return {
-    model: input?.model || 'default-model',
-    provider: provider?.endpoint || 'catalog:ai-providers',
-    topLabel: picked,
-    confidence: Math.round((0.55 + (String(text).length % 40) / 100) * 100) / 100,
-    labels: candidateLabels.map((label) => ({
-      label,
-      confidence: label === picked ? 0.82 : 0.09,
-    })),
-  };
-}`,
+    script: AI_TEXT_CLASSIFIER_SCRIPT,
     invokeName: 'invokeClassifier',
     resultKey: 'classification',
     resultPath: 'topLabel',
@@ -185,17 +179,7 @@ export const AI_COMPONENTS: AiComponent[] = [
     subflowName: 'text-summarizer',
     subflowVersion: '0.1.0',
     catalog: { catalogKey: 'ai-providers', endpoint: 'https://api.example.ai/v1/chat' },
-    script: `({ input, context, catalogs }) => {
-  const provider = catalogs?.['ai-providers'];
-  const text = input?.text || context?.text || '';
-  const collected = context?.collectedSummaries || [];
-  return {
-    model: input?.model || 'default-model',
-    provider: provider?.endpoint || 'catalog:ai-providers',
-    chunks: collected.length || 1,
-    summary: '[mock-summarize] ' + (collected.join(' ') || String(text).slice(0, 140)),
-  };
-}`,
+    script: AI_TEXT_SUMMARIZER_SCRIPT,
     invokeName: 'combineSummaries',
     resultKey: 'summary',
     resultPath: 'summary',
@@ -211,6 +195,7 @@ export const AI_COMPONENTS: AiComponent[] = [
 ];
 
 /** All components, frozen against accidental mutation. */
+Object.freeze(AI_COMPONENTS);
 export const aiComponents = (): readonly AiComponent[] => AI_COMPONENTS;
 
 /** Lookup by palette/kind identifier. Throws for unknown kinds. */

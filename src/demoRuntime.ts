@@ -468,12 +468,24 @@ async function executeTask(
     const aiComponent = findAiComponentBySubflow(subflow.namespace, subflow.name);
     if (aiComponent) {
       const { mock } = aiComponent;
+      // Source-key precedence: check all input keys first, then all context
+      // keys — matches the original interleaved input-first pattern
+      // (e.g. input.goal → input.prompt → context.goal → context.prompt).
       let source = '';
       for (const key of mock.sourceKeys) {
-        const candidate = run.input[key] ?? run.context?.[key];
+        const candidate = run.input[key];
         if (candidate !== undefined && candidate !== null && String(candidate).length > 0) {
           source = String(candidate);
           break;
+        }
+      }
+      if (!source) {
+        for (const key of mock.sourceKeys) {
+          const candidate = run.context?.[key];
+          if (candidate !== undefined && candidate !== null && String(candidate).length > 0) {
+            source = String(candidate);
+            break;
+          }
         }
       }
       const extras = mock.extraOutput?.(source, run.input) ?? {};
@@ -483,11 +495,30 @@ async function executeTask(
       };
       const meta: Record<string, unknown> = {
         target: `${subflow.namespace}/${subflow.name}@${subflow.version}`,
+        ...mock.logMeta?.(source, run.input),
       };
-      if (typeof extras.model === 'string') meta.model = extras.model;
-      if (Array.isArray(extras.steps)) meta.steps = extras.steps.length;
       addLog(run, `Executed ${mock.logLabel} ${scope}${name}`, meta);
       return { output: { demo: true, ...output }, next: definition.then };
+    }
+    // Fallback for unregistered ai-namespace delegations: produce an
+    // LLM-shaped mock so downstream $context.<task>.llmResult mappings
+    // still resolve (preserves pre-registry behavior).
+    if (subflow.namespace === 'ai') {
+      const source = String(
+        run.input.prompt ?? run.context?.prompt ?? run.input.goal ?? run.context?.goal ?? '',
+      );
+      const target = `${subflow.namespace}/${subflow.name}@${subflow.version}`;
+      const model = String(run.input.model || 'default-model');
+      addLog(run, `Executed LLM sub-flow ${scope}${name}`, { target, model });
+      return {
+        output: {
+          demo: true,
+          llmResult: `[mock-llm] ${source.slice(0, 160)}`,
+          model,
+          usage: { inputTokens: source.length, outputTokens: 24 },
+        },
+        next: definition.then,
+      };
     }
     addLog(run, `Simulated sub-flow ${scope}${name}`, {
       target: `${subflow.namespace}/${subflow.name}@${subflow.version}`,

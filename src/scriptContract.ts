@@ -44,6 +44,45 @@ export const AI_AGENT_SCRIPT = `({ input, context, catalogs }) => {
   };
 }`;
 
+/**
+ * Contract stub for the text-classifier subflow body. Reads the provider
+ * endpoint from the `ai-providers` catalog, classifies input text against
+ * candidate labels, and returns a classification-shaped result.
+ */
+export const AI_TEXT_CLASSIFIER_SCRIPT = `({ input, context, catalogs }) => {
+  const provider = catalogs?.['ai-providers'];
+  const text = input?.text || context?.text || '';
+  const candidateLabels = (input?.labels?.length ? input.labels : null) || ['billing', 'technical', 'general'];
+  const picked = candidateLabels[String(text).length % candidateLabels.length];
+  return {
+    model: input?.model || 'default-model',
+    provider: provider?.endpoint || 'catalog:ai-providers',
+    topLabel: picked,
+    confidence: Math.round((0.55 + (String(text).length % 40) / 100) * 100) / 100,
+    labels: candidateLabels.map((label) => ({
+      label,
+      confidence: label === picked ? 0.82 : 0.09,
+    })),
+  };
+}`;
+
+/**
+ * Contract stub for the text-summarizer subflow body. Reads the provider
+ * endpoint from the `ai-providers` catalog, combines collected chunk summaries,
+ * and returns a summary-shaped result.
+ */
+export const AI_TEXT_SUMMARIZER_SCRIPT = `({ input, context, catalogs }) => {
+  const provider = catalogs?.['ai-providers'];
+  const text = input?.text || context?.text || '';
+  const collected = context?.collectedSummaries || [];
+  return {
+    model: input?.model || 'default-model',
+    provider: provider?.endpoint || 'catalog:ai-providers',
+    chunks: collected.length || 1,
+    summary: '[mock-summarize] ' + (collected.join(' ') || String(text).slice(0, 140)),
+  };
+}`;
+
 /** AI-delegation task kinds supported by the editor scaffolding. */
 export type AiTaskKind = 'llm-call' | 'ai-agent-call' | 'text-classifier' | 'text-summarizer';
 

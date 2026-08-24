@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+AI component registry (Tasks 105–108) plus code-review hardening (Tasks 109–118). Suite: **192 unit / 71 E2E**.
+
+### Added
+
+- **AI component registry (`src/ai/registry.ts`):** every AI component (kind, label, icon, sub-flow identity, catalog descriptor, script contract, demo-mock recipe) declared as data. Palette, Inspector, canvas, demo engine, and deployment bundle all read the registry — adding a component = one entry + tests. (Task 105)
+- **Catalog-backed provider configuration:** each component declares a typed `AiCatalogDescriptor` (`catalogKey` + `endpoint`); `createAiSubflowDocument` writes `use.catalogs` from the descriptor. (Task 106)
+- **New AI components:** `text-classifier` (prompt-builder function + classifier script) and `text-summarizer` (chunked map-reduce script) — both schema-valid, palette entries live, demo-engine mocks produce contract-shaped results. No new DSL keys. (Task 107)
+- **35 new unit tests** in `src/ai/registry.test.ts` covering registry completeness, schema-validity of all scaffolded documents, delegation tasks, and mock recipes.
+
+### Fixed
+
+- **Canvas drag-drop of AI palette items creates correct tasks:** `EditorCanvas.tsx` `onDrop` now routes AI kinds through `addTopLevelAiTask` + scaffold effect instead of falling back to a broken generic `set` task. (Task 109)
+- **AI task validation errors surface to the user:** `addPaletteTask`'s try/catch no longer swallows schema-validation errors from `addTopLevelAiTask`. (Task 110)
+- **Unregistered `ai/*` sub-flows get LLM-shaped mock fallback:** the demo engine produces a result for any `ai`-namespace delegation, not just the 4 registered components. (Task 111)
+- **Demo mock source-key priority restored:** input keys are checked before context keys (input.goal → input.prompt → context.goal → context.prompt), matching the original interleaved precedence. (Task 112)
+- **Classifier script handles empty `labels: []`:** explicit empty array no longer causes div-by-zero; falls back to default labels. (Task 113)
+- **`aiComponents()` return value is actually frozen:** `Object.freeze(AI_COMPONENTS)` backs the documented claim. (Task 114)
+
+### Changed
+
+- **Dead `AiTaskSpec`/`AI_TASK_SPECS`/`getAiTaskSpec` removed from `workflowModel.ts`:** all consumers read `src/ai/registry.ts` directly. (Task 115)
+- **Demo-runtime log metadata uses typed `logMeta` hook:** per-component log metadata declared in the registry instead of type-sniffing `extraOutput` in `demoRuntime.ts`. (Task 116)
+- **New component scripts exported from `scriptContract.ts`:** `AI_TEXT_CLASSIFIER_SCRIPT` and `AI_TEXT_SUMMARIZER_SCRIPT` alongside the existing two. (Task 117)
+
 Code-review hardening round (Tasks 58–67, 69) plus a canvas multi-select fix. Suite: **157 unit / 71 E2E**.
 
 ### Fixed

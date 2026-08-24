@@ -12,11 +12,14 @@ import {
   type NodeChange,
 } from '@xyflow/react';
 import {
+  addTopLevelAiTask,
   addTopLevelTask,
   connectTopLevelTasks,
   disconnectTopLevelTasks,
   removeTopLevelTask,
 } from '../../workflowModel';
+import { getAiComponent } from '../../ai/registry';
+import type { AiTaskKind } from '../../scriptContract';
 import { paletteItems } from '../../taskMeta';
 import { downloadSvgDiagram, downloadPngDiagram } from '../../diagramExport';
 import type { WorkflowDocument, FlowNode, FlowEdge, CanvasPositions, TaskType, AppTheme } from '../../types';
@@ -84,6 +87,8 @@ export interface EditorCanvasProps {
   onAutoLayout?: () => void;
   isLayouting?: boolean;
   onToggleLayoutMode?: () => void;
+  /** Called when an AI palette item is dropped on the canvas, triggering sub-flow scaffold. */
+  onAiScaffoldRequest?: (kind: string) => void;
 }
 
 export function EditorCanvas({
@@ -119,6 +124,7 @@ export function EditorCanvas({
   onAutoLayout,
   isLayouting = false,
   onToggleLayoutMode,
+  onAiScaffoldRequest,
 }: EditorCanvasProps) {
   const reactFlow = useReactFlow();
   const [dropStatus, setDropStatus] = useState<'idle' | 'valid' | 'invalid'>('idle');
@@ -306,11 +312,20 @@ export function EditorCanvas({
         return;
       }
       const position = reactFlow.screenToFlowPosition({ x: event.clientX, y: event.clientY });
-      const next = addTopLevelTask(document, taskType);
+      // AI palette items require the AI-aware task creation path (delegation
+      // task + sub-flow scaffold); non-AI items use the generic path.
+      let next: WorkflowDocument;
+      try {
+        const aiComponent = getAiComponent(taskType as AiTaskKind);
+        next = addTopLevelAiTask(document, aiComponent.kind);
+        onAiScaffoldRequest?.(aiComponent.kind);
+      } catch {
+        next = addTopLevelTask(document, taskType);
+      }
       const createdName = Object.keys(next.do?.[next.do.length - 1] || {})[0];
       onDocumentChange(next, { [`/do/${createdName}`]: position });
     },
-    [document, onDocumentChange, onOpenFileContent, reactFlow],
+    [document, onDocumentChange, onOpenFileContent, onAiScaffoldRequest, reactFlow],
   );
 
   const handleFitView = useCallback(() => {

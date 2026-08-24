@@ -1,7 +1,7 @@
 import { buildFlatGraph, validate, GraphNodeType } from '@openworkflowspec/sdk';
 import * as yaml from 'js-yaml';
 import { DEFAULT_JAVASCRIPT_TASK, type AiTaskKind } from './scriptContract';
-import { aiComponents, findAiComponentBySubflow, getAiComponent, type AiComponent } from './ai/registry';
+import { findAiComponentBySubflow, getAiComponent } from './ai/registry';
 import type {
   CanvasPosition,
   CanvasPositions,
@@ -18,42 +18,6 @@ import type {
 
 /** The SDK's workflow AST type, derived from buildFlatGraph's signature. */
 type SdkWorkflow = Parameters<typeof buildFlatGraph>[0];
-
-/**
- * AI task composition: the palette AI entries are NOT new DSL task keys (the
- * Open Workflow 1.0.3 schema does not accept them yet), so they are composed
- * from valid primitives — a `run.workflow` delegation task in the parent plus
- * a scaffolded sub-flow (`ai` namespace) that reads a catalog-backed provider
- * and executes a runnable script contract.
- *
- * Component declarations live in `src/ai/registry.ts`; this interface remains
- * as the view of a component that consumers historically relied on.
- */
-export interface AiTaskSpec {
-  kind: AiTaskKind;
-  label: string;
-  /** Parent task name created by `addTopLevelAiTask`. */
-  taskName: string;
-  subflowNamespace: string;
-  subflowName: string;
-  subflowVersion: string;
-}
-
-const toAiTaskSpec = (component: AiComponent): AiTaskSpec => ({
-  kind: component.kind,
-  label: component.label,
-  taskName: component.taskName,
-  subflowNamespace: component.subflowNamespace,
-  subflowName: component.subflowName,
-  subflowVersion: component.subflowVersion,
-});
-
-/** All registered AI components, projected onto the historical spec shape. */
-export const AI_TASK_SPECS: AiTaskSpec[] = aiComponents().map(toAiTaskSpec);
-
-export function getAiTaskSpec(kind: AiTaskKind): AiTaskSpec {
-  return toAiTaskSpec(getAiComponent(kind));
-}
 
 /** The catalog key the LLM sub-flow resolves its provider endpoint from. */
 export const AI_PROVIDER_CATALOG = 'ai-providers';
@@ -104,19 +68,19 @@ export function createAiSubflowDocument(kind: AiTaskKind): WorkflowDocument {
 
 /** Adds an AI delegation task (`run.workflow` → AI sub-flow) at the end of `do`. */
 export function addTopLevelAiTask(document: WorkflowDocument, kind: AiTaskKind): WorkflowDocument {
-  const spec = getAiTaskSpec(kind);
+  const component = getAiComponent(kind);
   const next = clone(document);
   const nextDo: TaskItem[] = next.do ?? [];
-  let taskName = spec.taskName;
+  let taskName = component.taskName;
   let suffix = 2;
-  while (nextDo.some((item) => Object.hasOwn(item, taskName))) taskName = `${spec.taskName}-${suffix++}`;
+  while (nextDo.some((item) => Object.hasOwn(item, taskName))) taskName = `${component.taskName}-${suffix++}`;
   nextDo.push({
     [taskName]: {
       run: {
         workflow: {
-          namespace: spec.subflowNamespace,
-          name: spec.subflowName,
-          version: spec.subflowVersion,
+          namespace: component.subflowNamespace,
+          name: component.subflowName,
+          version: component.subflowVersion,
         },
       },
     },

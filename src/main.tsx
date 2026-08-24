@@ -1214,19 +1214,21 @@ function App() {
     // plus a scaffolded catalog-backed AI sub-flow in a new tab. The scaffold
     // runs in a post-commit effect so the parent tab is stashed with the new
     // task included (a setTimeout would capture a stale document).
+    let aiComponent: ReturnType<typeof getAiComponent> | undefined;
     try {
-      const aiKind = taskType as AiTaskKind;
-      const component = getAiComponent(aiKind);
-      const next = addTopLevelAiTask(document, aiKind);
+      aiComponent = getAiComponent(taskType as AiTaskKind);
+    } catch {
+      // Not an AI component — fall through to generic task add.
+    }
+    if (aiComponent) {
+      const next = addTopLevelAiTask(document, aiComponent.kind);
       const createdName = Object.keys(next.do?.[next.do.length - 1] || {})[0];
       setSelectedId(`/do/${createdName}`);
       syncDocument(next);
-      setAiScaffoldRequest({ kind: aiKind, requestId: aiScaffoldRequestSequenceRef.current!() });
-      setNotice(`Added ${component.label} — scaffolding ${component.subflowName} sub-flow`);
+      setAiScaffoldRequest({ kind: aiComponent.kind, requestId: aiScaffoldRequestSequenceRef.current!() });
+      setNotice(`Added ${aiComponent.label} — scaffolding ${aiComponent.subflowName} sub-flow`);
       window.setTimeout(() => setNotice(''), 2400);
       return;
-    } catch {
-      // Not an AI component — fall through to generic task add.
     }
     const next = addTopLevelTask(document, taskType);
     const createdName = Object.keys(next.do?.[next.do.length - 1] || {})[0];
@@ -2790,6 +2792,12 @@ do:
                   onToggleLayoutMode={() =>
                     setLayoutMode((current) => (current === 'manual' ? 'auto' : 'manual'))
                   }
+                  onAiScaffoldRequest={(kind) => {
+                    setAiScaffoldRequest({
+                      kind: kind as AiTaskKind,
+                      requestId: aiScaffoldRequestSequenceRef.current!(),
+                    });
+                  }}
                 />
               </ReactFlowProvider>
             ) : (

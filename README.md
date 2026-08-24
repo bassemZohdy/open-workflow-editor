@@ -63,10 +63,10 @@ Click **Deploy bundle** in the workspace toolbar to generate:
 ## Verification Commands
 
 ```bash
-# Run Vitest unit tests (80 tests)
+# Run Vitest unit tests (192 tests)
 npm test
 
-# Run Playwright E2E browser tests (64 tests, parallel)
+# Run Playwright E2E browser tests (71 tests, parallel)
 npm run test:browser
 
 # Type-check TypeScript
