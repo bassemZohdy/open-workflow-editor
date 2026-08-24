@@ -6,9 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-AI component registry (Tasks 105–108) plus code-review hardening (Tasks 109–118). Suite: **192 unit / 71 E2E**.
+AI component registry (Tasks 105–108), code-review hardening (Tasks 109–118), controller foundation (Task 71), dependency pinning (Tasks 99–100), migration kit (Task 108). Suite: **207 unit / 71 E2E**.
 
 ### Added
+
+- **Controller pattern foundation (`src/controllers/`):** `createController<T>` + `useController` hook wrapping `useSyncExternalStore`. Scaffolding for the panel extraction migration (Tasks 72–79). 7 unit tests. (Task 71)
+- **AI migration kit (`src/ai/migration.ts`):** `collectMigratableDelegations` + `migrateAiDelegations` — no-op today (no native keys), ready to rewrite `run.workflow → ai/*` delegations when the spec adds native AI task types. 8 unit tests. (Task 108)
 
 - **AI component registry (`src/ai/registry.ts`):** every AI component (kind, label, icon, sub-flow identity, catalog descriptor, script contract, demo-mock recipe) declared as data. Palette, Inspector, canvas, demo engine, and deployment bundle all read the registry — adding a component = one entry + tests. (Task 105)
 - **Catalog-backed provider configuration:** each component declares a typed `AiCatalogDescriptor` (`catalogKey` + `endpoint`); `createAiSubflowDocument` writes `use.catalogs` from the descriptor. (Task 106)
@@ -29,6 +32,7 @@ AI component registry (Tasks 105–108) plus code-review hardening (Tasks 109–
 - **Dead `AiTaskSpec`/`AI_TASK_SPECS`/`getAiTaskSpec` removed from `workflowModel.ts`:** all consumers read `src/ai/registry.ts` directly. (Task 115)
 - **Demo-runtime log metadata uses typed `logMeta` hook:** per-component log metadata declared in the registry instead of type-sniffing `extraOutput` in `demoRuntime.ts`. (Task 116)
 - **New component scripts exported from `scriptContract.ts`:** `AI_TEXT_CLASSIFIER_SCRIPT` and `AI_TEXT_SUMMARIZER_SCRIPT` alongside the existing two. (Task 117)
+- **Dependencies pinned:** `vite` → `^8.2.1`, `@vitejs/plugin-react` → `^6.0.5` (were `"latest"`); `@openworkflowspec/sdk` → exact `1.0.3-alpha7` (was `^1.0.3-alpha7`). (Tasks 99–100)
 
 Code-review hardening round (Tasks 58–67, 69) plus a canvas multi-select fix. Suite: **157 unit / 71 E2E**.
 
