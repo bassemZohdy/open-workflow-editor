@@ -7,5 +7,6 @@ playwright-report/
 !.env.example
 .DS_Store
 .playwright-mcp/
+.claude/
 .commandcode/
 .remember/
