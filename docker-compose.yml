@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  editor:
+    build: .
+    ports:
+      - '3000:3000'
+    environment:
+      - NODE_ENV=production
+      - OPEN_WORKFLOW_RUNTIME_URL=${OPEN_WORKFLOW_RUNTIME_URL:-http://localhost:3000}
+      - OPEN_WORKFLOW_RUNTIME_AUTH_TOKEN=${OPEN_WORKFLOW_RUNTIME_AUTH_TOKEN:-}
+    restart: unless-stopped

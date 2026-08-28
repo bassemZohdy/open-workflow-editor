@@ -25,7 +25,7 @@ Before enabling a run panel:
 
 1. Build a server-side gateway around the selected Java runtime.
 2. Prove validation and execution for every task type the editor can author, or narrow the editor’s runnable subset explicitly.
-3. Add authenticated `validate`, `start`, `status`, `cancel`, and `logs` endpoints matching `src/runtimeAdapter.js`.
+3. Add authenticated `validate`, `start`, `status`, `cancel`, and `logs` endpoints matching `src/runtimeAdapter.ts`.
 4. Complete the security review for secrets, endpoints, expressions, logs, and cancellation authorization.
 
 Sources:

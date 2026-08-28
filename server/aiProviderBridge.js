@@ -50,19 +50,60 @@ export function createAiProviderBridge(providerConfig = {}) {
   };
 
   const callProvider = async (path, body) => {
-    const response = await fetch(`${baseUrl.replace(/\/$/, '')}${path}`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      throw new Error(`AI provider error (${response.status}): ${text.slice(0, 240)}`);
+    const url = `${baseUrl.replace(/\/$/, '')}${path}`;
+
+    // SSRF protection: validate URL
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new Error(`Invalid provider URL: ${url}`);
     }
-    return response.json();
+
+    // Require HTTPS
+    if (parsed.protocol !== 'https:') {
+      throw new Error(`Provider URL must use HTTPS: ${url}`);
+    }
+
+    // Block loopback/private/link-local destinations
+    const hostname = parsed.hostname;
+    const isPrivate =
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '::1' ||
+      hostname.startsWith('10.') ||
+      hostname.startsWith('172.16.') ||
+      hostname.startsWith('192.168.') ||
+      hostname.startsWith('169.254.') ||
+      hostname.startsWith('fc00:') ||
+      hostname.startsWith('fe80:');
+
+    if (isPrivate) {
+      throw new Error(`Provider URL must not target private/loopback addresses: ${hostname}`);
+    }
+
+    // Egress timeout: 30 seconds
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        throw new Error(`AI provider error (${response.status}): ${text.slice(0, 240)}`);
+      }
+      return response.json();
+    } finally {
+      clearTimeout(timeout);
+    }
   };
 
   return {

@@ -13,9 +13,23 @@
     "preview": "vite preview",
     "runtime:sandbox": "node server/index.js",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:browser": "playwright test",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "size": "size-limit",
+    "size:why": "size-limit --why",
+    "bench": "vitest bench"
   },
+  "size-limit": [
+    {
+      "path": "dist/assets/*.js",
+      "limit": "500 kB"
+    },
+    {
+      "path": "dist/assets/*.css",
+      "limit": "100 kB"
+    }
+  ],
   "dependencies": {
     "@codemirror/commands": "^6.11.0",
     "@codemirror/lang-json": "^6.0.2",
@@ -37,12 +51,16 @@
     "vite": "^8.2.1"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.62.1",
+    "@size-limit/preset-app": "^13.0.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
+    "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^10.8.1",
     "eslint-plugin-react-hooks": "^7.1.1",
     "prettier": "^3.9.6",
+    "size-limit": "^13.0.3",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"
   }

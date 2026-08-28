@@ -54,6 +54,21 @@ export function createRuntimeGatewayHandler(options = {}) {
     const pathname = url.pathname;
     const clientIp = request.socket?.remoteAddress || '127.0.0.1';
     const now = Date.now();
+    const requestStart = Date.now();
+
+    // Structured request logging
+    const logRequest = (status) => {
+      const duration = Date.now() - requestStart;
+      const logEntry = {
+        timestamp: new Date().toISOString(),
+        method: request.method,
+        pathname,
+        status,
+        duration_ms: duration,
+        ip: clientIp,
+      };
+      process.stdout.write(JSON.stringify(logEntry) + '\n');
+    };
 
     // 1. Rate Limiting
     const timestamps = (requestHistory.get(clientIp) || []).filter((ts) => now - ts < rateLimitWindowMs);
@@ -68,6 +83,7 @@ export function createRuntimeGatewayHandler(options = {}) {
         }),
       );
       recordAudit({ ip: clientIp, method: request.method, pathname, status: 429 });
+      logRequest(429);
       return true;
     }
     timestamps.push(now);
@@ -85,6 +101,7 @@ export function createRuntimeGatewayHandler(options = {}) {
           JSON.stringify({ error: 'Unauthorized. Valid Bearer token required for gateway access.' }),
         );
         recordAudit({ ip: clientIp, method: request.method, pathname, status: 401 });
+        logRequest(401);
         return true;
       }
     }
@@ -103,6 +120,7 @@ export function createRuntimeGatewayHandler(options = {}) {
         }),
       );
       recordAudit({ ip: clientIp, method: 'GET', pathname, status: 200 });
+      logRequest(200);
       return true;
     }
 
@@ -110,6 +128,46 @@ export function createRuntimeGatewayHandler(options = {}) {
       response.statusCode = 200;
       response.setHeader('content-type', 'application/json');
       response.end(JSON.stringify({ total: auditLogs.length, entries: auditLogs }));
+      logRequest(200);
+      return true;
+    }
+
+    if (request.method === 'GET' && pathname === '/metrics') {
+      const uptime = Date.now() - startTime;
+      const metrics = {
+        uptime_ms: uptime,
+        active_runs: runs.size,
+        active_sse_connections: Array.from(eventListeners.values()).reduce((sum, set) => sum + set.size, 0),
+        total_audit_entries: auditLogs.length,
+        rate_limit_entries: requestHistory.size,
+        memory: process.memoryUsage(),
+      };
+
+      // Prometheus-compatible text format
+      const prometheus = [
+        `# HELP gateway_uptime_ms Gateway uptime in milliseconds`,
+        `# TYPE gateway_uptime_ms gauge`,
+        `gateway_uptime_ms ${uptime}`,
+        `# HELP gateway_active_runs Number of active runs`,
+        `# TYPE gateway_active_runs gauge`,
+        `gateway_active_runs ${runs.size}`,
+        `# HELP gateway_sse_connections Number of active SSE connections`,
+        `# TYPE gateway_sse_connections gauge`,
+        `gateway_sse_connections ${metrics.active_sse_connections}`,
+        `# HELP gateway_audit_entries Total audit log entries`,
+        `# TYPE gateway_audit_entries gauge`,
+        `gateway_audit_entries ${auditLogs.length}`,
+        `# HELP process_memory_bytes Process memory usage`,
+        `# TYPE process_memory_bytes gauge`,
+        `process_memory_bytes{type="rss"} ${metrics.memory.rss}`,
+        `process_memory_bytes{type="heapTotal"} ${metrics.memory.heapTotal}`,
+        `process_memory_bytes{type="heapUsed"} ${metrics.memory.heapUsed}`,
+      ].join('\n');
+
+      response.statusCode = 200;
+      response.setHeader('content-type', 'text/plain; version=0.0.4');
+      response.end(prometheus);
+      logRequest(200);
       return true;
     }
 
@@ -124,6 +182,7 @@ export function createRuntimeGatewayHandler(options = {}) {
         response.setHeader('content-type', 'application/json');
         response.end(JSON.stringify({ error: 'Invalid JSON payload' }));
         recordAudit({ ip: clientIp, method: 'POST', pathname, status: 400 });
+        logRequest(400);
         return true;
       }
       response.statusCode = 200;
@@ -135,6 +194,7 @@ export function createRuntimeGatewayHandler(options = {}) {
         }),
       );
       recordAudit({ ip: clientIp, method: 'POST', pathname, status: 200 });
+      logRequest(200);
       return true;
     }
 
@@ -187,6 +247,7 @@ export function createRuntimeGatewayHandler(options = {}) {
       response.setHeader('content-type', 'application/json');
       response.end(JSON.stringify(runRecord));
       recordAudit({ ip: clientIp, method: 'POST', pathname, status: 201, runId });
+      logRequest(201);
       return true;
     }
 
@@ -198,6 +259,19 @@ export function createRuntimeGatewayHandler(options = {}) {
         response.setHeader('content-type', 'application/json');
         response.end(JSON.stringify({ error: `Run ${runId} not found.` }));
         recordAudit({ ip: clientIp, method: 'GET', pathname, status: 404, runId });
+        logRequest(404);
+        return true;
+      }
+
+      // Connection cap: max 10 concurrent SSE connections per run
+      const MAX_SSE_CONNECTIONS = 10;
+      const existingListeners = eventListeners.get(runId);
+      if (existingListeners && existingListeners.size >= MAX_SSE_CONNECTIONS) {
+        response.statusCode = 429;
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify({ error: 'Too many SSE connections for this run.' }));
+        recordAudit({ ip: clientIp, method: 'GET', pathname, status: 429, runId });
+        logRequest(429);
         return true;
       }
 
@@ -212,6 +286,15 @@ export function createRuntimeGatewayHandler(options = {}) {
 
       sendEvent('status', runRecord);
 
+      // Heartbeat ping every 30 seconds
+      const heartbeatInterval = setInterval(() => {
+        try {
+          response.write(': heartbeat\n\n');
+        } catch {
+          // ignore closed socket
+        }
+      }, 30000);
+
       const listener = (event) => {
         sendEvent(event.type, event.data);
         if (event.type === 'completed' || event.type === 'canceled' || event.type === 'failed') {
@@ -224,6 +307,7 @@ export function createRuntimeGatewayHandler(options = {}) {
       eventListeners.get(runId).add(listener);
 
       const cleanup = () => {
+        clearInterval(heartbeatInterval);
         const listeners = eventListeners.get(runId);
         if (listeners) {
           listeners.delete(listener);
@@ -233,6 +317,7 @@ export function createRuntimeGatewayHandler(options = {}) {
 
       request.on('close', cleanup);
       recordAudit({ ip: clientIp, method: 'GET', pathname, status: 200, runId });
+      logRequest(200);
       return true;
     }
 
@@ -244,12 +329,14 @@ export function createRuntimeGatewayHandler(options = {}) {
         response.setHeader('content-type', 'application/json');
         response.end(JSON.stringify({ error: `Run ${runId} not found.` }));
         recordAudit({ ip: clientIp, method: 'GET', pathname, status: 404, runId });
+        logRequest(404);
         return true;
       }
       response.statusCode = 200;
       response.setHeader('content-type', 'application/json');
       response.end(JSON.stringify(runRecord));
       recordAudit({ ip: clientIp, method: 'GET', pathname, status: 200, runId });
+      logRequest(200);
       return true;
     }
 
@@ -261,6 +348,7 @@ export function createRuntimeGatewayHandler(options = {}) {
         response.setHeader('content-type', 'application/json');
         response.end(JSON.stringify({ error: `Run ${runId} not found.` }));
         recordAudit({ ip: clientIp, method: 'DELETE', pathname, status: 404, runId });
+        logRequest(404);
         return true;
       }
       runRecord.state = 'canceled';
@@ -270,6 +358,7 @@ export function createRuntimeGatewayHandler(options = {}) {
       response.setHeader('content-type', 'application/json');
       response.end(JSON.stringify(runRecord));
       recordAudit({ ip: clientIp, method: 'DELETE', pathname, status: 200, runId });
+      logRequest(200);
       return true;
     }
 
@@ -281,12 +370,14 @@ export function createRuntimeGatewayHandler(options = {}) {
         response.setHeader('content-type', 'application/json');
         response.end(JSON.stringify({ error: `Run ${runId} not found.` }));
         recordAudit({ ip: clientIp, method: 'GET', pathname, status: 404, runId });
+        logRequest(404);
         return true;
       }
       response.statusCode = 200;
       response.setHeader('content-type', 'application/json');
       response.end(JSON.stringify(runRecord.logs.join('\n')));
       recordAudit({ ip: clientIp, method: 'GET', pathname, status: 200, runId });
+      logRequest(200);
       return true;
     }
 
@@ -305,6 +396,7 @@ export function createRuntimeGatewayHandler(options = {}) {
           }),
         );
         recordAudit({ ip: clientIp, method: 'POST', pathname, status: 503 });
+        logRequest(503);
         return true;
       }
       let raw = '';
@@ -318,6 +410,7 @@ export function createRuntimeGatewayHandler(options = {}) {
         response.setHeader('content-type', 'application/json');
         response.end(JSON.stringify({ error: 'Invalid JSON payload.' }));
         recordAudit({ ip: clientIp, method: 'POST', pathname, status: 400 });
+        logRequest(400);
         return true;
       }
       try {
@@ -326,6 +419,7 @@ export function createRuntimeGatewayHandler(options = {}) {
         response.setHeader('content-type', 'application/json');
         response.end(JSON.stringify({ ok: true, result }));
         recordAudit({ ip: clientIp, method: 'POST', pathname, status: 200, aiKind: kind });
+        logRequest(200);
       } catch (error) {
         response.statusCode = 502;
         response.setHeader('content-type', 'application/json');
@@ -333,10 +427,12 @@ export function createRuntimeGatewayHandler(options = {}) {
           JSON.stringify({ error: error instanceof Error ? error.message : 'AI provider call failed.' }),
         );
         recordAudit({ ip: clientIp, method: 'POST', pathname, status: 502, aiKind: kind });
+        logRequest(502);
       }
       return true;
     }
 
+    logRequest(404);
     return false;
   };
 }
