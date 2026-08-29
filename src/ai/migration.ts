@@ -19,45 +19,59 @@ import type { TaskItem, WorkflowDocument } from '../types';
  * and would be eligible for migration to a native task key.
  */
 export interface MigratableDelegation {
-  /** Path to the delegation task in the document (e.g. `/do/aiLlmTask`). */
-  path: string;
-  /** The task name in the parent document. */
+  /** The task name in the parent task list. */
   taskName: string;
   /** The AI component kind this delegation targets. */
   kind: AiTaskKind;
   /** The sub-flow target (namespace/name@version). */
   target: string;
+  /** Reference to the task list containing this delegation (for rewriting). */
+  container: TaskItem[];
+  /** Index within the container. */
+  index: number;
 }
 
 /**
  * Collects all `run.workflow` delegations in a document that target a
- * registered AI component — these are eligible for migration to native keys
- * when the spec defines them.
+ * registered AI component — walking nested containers (`do`/`for`,
+ * `fork.branches`, `try`, `catch.do`) recursively.
  */
 export function collectMigratableDelegations(document: WorkflowDocument): MigratableDelegation[] {
   const results: MigratableDelegation[] = [];
-  const doList = document.do ?? [];
 
-  for (let i = 0; i < doList.length; i++) {
-    const item = doList[i];
-    const taskName = Object.keys(item)[0];
-    if (!taskName) continue;
-    const task = item[taskName] as Record<string, unknown>;
-    const workflow = (task?.run as { workflow?: { namespace?: string; name?: string; version?: string } })
-      ?.workflow;
-    if (!workflow?.namespace || !workflow?.name) continue;
+  const visit = (list: TaskItem[] | undefined, pathPrefix: string) => {
+    for (let i = 0; i < (list ?? []).length; i++) {
+      const item = list![i];
+      const taskName = Object.keys(item)[0];
+      if (!taskName) continue;
+      const task = item[taskName] as Record<string, unknown>;
+      const workflow = (task?.run as { workflow?: { namespace?: string; name?: string; version?: string } })
+        ?.workflow;
 
-    const component = findAiComponentBySubflow(workflow.namespace, workflow.name);
-    if (component) {
-      results.push({
-        path: `/do/${taskName}`,
-        taskName,
-        kind: component.kind,
-        target: `${workflow.namespace}/${workflow.name}@${workflow.version ?? 'latest'}`,
-      });
+      if (workflow?.namespace && workflow?.name) {
+        const component = findAiComponentBySubflow(workflow.namespace, workflow.name);
+        if (component) {
+          results.push({
+            taskName,
+            kind: component.kind,
+            target: `${workflow.namespace}/${workflow.name}@${workflow.version ?? 'latest'}`,
+            container: list!,
+            index: i,
+          });
+        }
+      }
+
+      // Recurse into nested containers.
+      visit(task.do as TaskItem[] | undefined, `${pathPrefix}/${taskName}`);
+      const branches = task.fork as { branches?: TaskItem[] } | undefined;
+      visit(branches?.branches, `${pathPrefix}/${taskName}`);
+      visit(task.try as TaskItem[] | undefined, `${pathPrefix}/${taskName}`);
+      const catchBlock = task.catch as { do?: TaskItem[] } | undefined;
+      visit(catchBlock?.do, `${pathPrefix}/${taskName}`);
     }
-  }
+  };
 
+  visit(document.do, '/do');
   return results;
 }
 
@@ -84,36 +98,33 @@ export function migrateAiDelegations(
 
   // Deep-clone the document to avoid mutating the original.
   const next: WorkflowDocument = JSON.parse(JSON.stringify(document));
-  const doList: TaskItem[] = next.do ?? [];
 
-  for (const migration of applicable) {
+  // Re-collect on the cloned document so container references point into the clone.
+  const clonedMigratable = collectMigratableDelegations(next);
+  const clonedApplicable = clonedMigratable.filter((d) => nativeKeyMap[d.kind]);
+
+  const applied: MigratableDelegation[] = [];
+  for (let i = 0; i < clonedApplicable.length; i++) {
+    const migration = clonedApplicable[i];
     const nativeKey = nativeKeyMap[migration.kind]!;
-    const taskIndex = doList.findIndex((item) => Object.keys(item)[0] === migration.taskName);
-    if (taskIndex < 0) continue;
+    const oldTask = migration.container[migration.index][migration.taskName] as Record<string, unknown>;
+    if (!oldTask?.run) continue;
 
-    const oldTaskName = migration.taskName;
-    const oldTask = doList[taskIndex][oldTaskName] as Record<string, unknown>;
-    const workflow = (oldTask?.run as { workflow?: Record<string, unknown> })?.workflow;
-    if (!workflow) continue;
-
-    // Rewrite: replace `run.workflow` delegation with native task key.
-    // The native task body carries the same sub-flow target as metadata
-    // so the runtime can resolve it.
+    // Build the native task: copy ALL fields from the old task except `run`,
+    // then add the native key body with the sub-flow target.
+    const { run: _run, ...rest } = oldTask;
     const nativeTask = {
       [nativeKey]: {
-        namespace: workflow.namespace,
-        name: workflow.name,
-        version: workflow.version,
+        namespace: (oldTask.run as any).workflow.namespace,
+        name: (oldTask.run as any).workflow.name,
+        version: (oldTask.run as any).workflow.version,
+        ...rest,
       },
     };
 
-    // Preserve the `then` chain if present.
-    if (oldTask.then) {
-      (nativeTask[nativeKey] as Record<string, unknown>).then = oldTask.then;
-    }
-
-    doList[taskIndex] = nativeTask as TaskItem;
+    migration.container[migration.index] = nativeTask as TaskItem;
+    applied.push(applicable[i]);
   }
 
-  return { document: next, migrations: applicable };
+  return { document: next, migrations: applied };
 }

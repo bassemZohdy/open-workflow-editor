@@ -59,4 +59,39 @@ describe('createController', () => {
     ctrl.dispatch((prev) => ({ count: prev.count * 2 }));
     expect(ctrl.getState().count).toBe(10);
   });
+
+  it('state is frozen — in-place mutation throws (Task 122)', () => {
+    const ctrl = createController({ count: 0 });
+    expect(() => {
+      (ctrl.getState() as any).count = 99;
+    }).toThrow();
+    expect(ctrl.getState().count).toBe(0);
+  });
+
+  it('frozen state prevents mutation-based no-op bypass (Task 122)', () => {
+    const ctrl = createController({ count: 0 });
+    const listener = vi.fn();
+    ctrl.subscribe(listener);
+    // Attempting in-place mutation throws, so the updater must return a new
+    // object — which means the reference check works correctly.
+    ctrl.dispatch((prev) => ({ count: prev.count + 1 }));
+    expect(ctrl.getState().count).toBe(1);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('listener errors are isolated — subsequent listeners still fire (Task 125)', () => {
+    const ctrl = createController({ count: 0 });
+    const errorListener = vi.fn(() => {
+      throw new Error('boom');
+    });
+    const normalListener = vi.fn();
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    ctrl.subscribe(errorListener);
+    ctrl.subscribe(normalListener);
+    ctrl.dispatch((prev) => ({ count: prev.count + 1 }));
+    expect(errorListener).toHaveBeenCalledTimes(1);
+    expect(normalListener).toHaveBeenCalledTimes(1);
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
 });

@@ -47,6 +47,62 @@ describe('collectMigratableDelegations', () => {
     const result = collectMigratableDelegations(doc);
     expect(result).toHaveLength(0);
   });
+
+  it('finds delegations nested inside try/catch blocks (Task 121)', () => {
+    const doc: WorkflowDocument = {
+      document: { dsl: '1.0.3', namespace: 'test', name: 'test', version: '1.0.0' },
+      do: [
+        {
+          myTry: {
+            try: [
+              {
+                aiLlmTask: {
+                  run: {
+                    workflow: { namespace: 'ai', name: 'prompt-llm', version: '0.1.0' },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      ],
+    };
+    const result = collectMigratableDelegations(doc);
+    expect(result).toHaveLength(1);
+    expect(result[0].kind).toBe('llm-call');
+  });
+
+  it('finds delegations nested inside fork branches', () => {
+    const doc: WorkflowDocument = {
+      document: { dsl: '1.0.3', namespace: 'test', name: 'test', version: '1.0.0' },
+      do: [
+        {
+          myFork: {
+            fork: {
+              branches: [
+                {
+                  branchA: {
+                    do: [
+                      {
+                        aiAgentTask: {
+                          run: {
+                            workflow: { namespace: 'ai', name: 'ai-agent', version: '0.1.0' },
+                          },
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        },
+      ],
+    };
+    const result = collectMigratableDelegations(doc);
+    expect(result).toHaveLength(1);
+    expect(result[0].kind).toBe('ai-agent-call');
+  });
 });
 
 describe('migrateAiDelegations', () => {
@@ -91,6 +147,38 @@ describe('migrateAiDelegations', () => {
     expect(migrations).toHaveLength(1);
     const migratedTask = result.do![0];
     expect((migratedTask as any).llm.then).toBe('nextTask');
+  });
+
+  it('preserves all task fields on migration (Task 119)', () => {
+    const doc: WorkflowDocument = {
+      document: { dsl: '1.0.3', namespace: 'test', name: 'test', version: '1.0.0' },
+      do: [
+        {
+          aiLlmTask: {
+            run: {
+              workflow: { namespace: 'ai', name: 'prompt-llm', version: '0.1.0' },
+            },
+            then: 'nextTask',
+            if: '${ $context.ready }',
+            input: { prompt: '${ $context.text }' },
+            timeout: '30s',
+            metadata: { priority: 'high' },
+          },
+        },
+        {
+          nextTask: { set: { done: true } },
+        },
+      ],
+    };
+    const { document: result } = migrateAiDelegations(doc, { 'llm-call': 'llm' });
+    const migrated = (result.do![0] as any).llm;
+    expect(migrated.then).toBe('nextTask');
+    expect(migrated.if).toBe('${ $context.ready }');
+    expect(migrated.input).toEqual({ prompt: '${ $context.text }' });
+    expect(migrated.timeout).toBe('30s');
+    expect(migrated.metadata).toEqual({ priority: 'high' });
+    // run should be gone.
+    expect(migrated.run).toBeUndefined();
   });
 
   it('does not mutate the original document', () => {

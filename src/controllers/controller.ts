@@ -1,7 +1,7 @@
 /**
  * Controller pattern foundation — a minimal reactive state container.
  *
- * A `Controller<TState>` holds an immutable state snapshot and notifies
+ * A `Controller<TState>` holds a frozen state snapshot and notifies
  * subscribers when it changes. Components consume it via `useController`,
  * which wraps React's `useSyncExternalStore` for tear-free reads.
  *
@@ -13,7 +13,7 @@
 export type StateUpdater<T> = (prev: T) => T;
 
 export interface Controller<T> {
-  /** Returns the current state snapshot. */
+  /** Returns the current state snapshot (frozen — mutation throws in strict mode). */
   getState(): T;
   /** Subscribes to state changes. Returns an unsubscribe function. */
   subscribe(listener: () => void): () => void;
@@ -24,11 +24,15 @@ export interface Controller<T> {
 /**
  * Creates a new controller with the given initial state.
  *
- * The controller enforces immutability at the type level — `dispatch` takes
- * an updater `(prev) => next` so callers never mutate the snapshot directly.
+ * The returned state is frozen after every dispatch to enforce the immutability
+ * contract — in-place mutation of the snapshot throws in strict mode, and the
+ * reference-equality no-op check in dispatch remains correct.
+ *
+ * Listener errors are isolated: a throwing listener does not prevent subsequent
+ * listeners from receiving the notification.
  */
 export function createController<T>(initialState: T): Controller<T> {
-  let state = initialState;
+  let state = Object.freeze(initialState);
   const listeners = new Set<() => void>();
 
   return {
@@ -44,9 +48,15 @@ export function createController<T>(initialState: T): Controller<T> {
     dispatch(updater) {
       const next = updater(state);
       if (next === state) return;
-      state = next;
+      state = Object.freeze(next);
       for (const listener of listeners) {
-        listener();
+        try {
+          listener();
+        } catch (error) {
+          // Isolate listener errors — subsequent listeners still receive the
+          // notification, and the exception doesn't propagate into dispatch.
+          console.error('[controller] listener error:', error);
+        }
       }
     },
   };

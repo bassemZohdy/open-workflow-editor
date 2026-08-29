@@ -25,7 +25,7 @@ Primary implementation: `main.tsx` (wiring & global shortcuts) and the `src/comp
 `src/components/layout/CommandPalette.tsx` — `Ctrl/Cmd+Shift+P`.
 
 - Fuzzy, keyed-by-score search with matched-character highlighting; sections (`File`, `Edit`, `Tasks`, `View`, `Workflow`, `Workflows`, `Settings`, `Help`).
-- Includes every toolbar action (`Save`, `Validate`, `Auto layout`, `Format`, `Export`, `Copy`, `Deploy bundle`, `Templates`, `History`, …), view/panel toggles, zoom and mini-map commands, theme switching, `Add <type> task` for all 14 task types (12 core + 2 AI components), and direct `Open workflow: <name>` entries for the saved library.
+- Includes every toolbar action (`Save`, `Validate`, `Auto layout`, `Format`, `Export`, `Copy`, `Deploy bundle`, `Templates`, `History`, …), view/panel toggles, zoom and mini-map commands, theme switching, `Add <type> task` for all 16 task types (12 core + 4 AI components), and direct `Open workflow: <name>` entries for the saved library.
 - **Canvas-scoped commands are always runnable:** invoking zoom / fit / mini-map entries from the Specification view auto-switches to the canvas and then applies (Task 28).
 - Keyboard: `↑/↓` or `Tab` to navigate, `Enter` to run, `Esc` to dismiss.
 
