@@ -1,0 +1,14 @@
+{
+  "name": "elk-layered",
+  "version": "0.12.0-editor.h2580006c5d72",
+  "private": true,
+  "main": "elk-worker.cjs",
+  "types": "index.d.ts",
+  "license": "EPL-2.0 OR GPL-3.0-or-later",
+  "files": [
+    "elk-worker.cjs",
+    "index.d.ts",
+    "LICENSE.md",
+    "provenance.json"
+  ]
+}

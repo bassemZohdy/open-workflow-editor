@@ -2,6 +2,7 @@ import { buildFlatGraph, validate, GraphNodeType } from '@openworkflowspec/sdk';
 import * as yaml from 'js-yaml';
 import { DEFAULT_JAVASCRIPT_TASK, type AiTaskKind } from './scriptContract';
 import { findAiComponentBySubflow, getAiComponent } from './ai/registry';
+import { createLayoutGraph } from './layoutGraph';
 import type {
   CanvasPosition,
   CanvasPositions,
@@ -462,17 +463,12 @@ function visibleGraphNodeId(id: string): string {
   return suffix ? value.slice('port-'.length, -suffix.length) : value;
 }
 
-type ElkInstance = InstanceType<(typeof import('elkjs/lib/elk.bundled.js'))['default']>;
+type ElkInstance = InstanceType<(typeof import('elkjs/lib/elk-api.js'))['default']>;
 
 let elkPromise: Promise<ElkInstance> | undefined;
 
-const FLOW_NODE_WIDTH = 208;
-const FLOW_NODE_HEIGHT = 74;
-const FLOW_PORT_WIDTH = 83;
-const FLOW_PORT_HEIGHT = 42;
-
 function getElk(): Promise<ElkInstance> {
-  elkPromise ||= import('elkjs/lib/elk.bundled.js').then(({ default: ELK }) => new ELK());
+  elkPromise ||= import('./layoutEngine').then(({ createLayoutEngine }) => createLayoutEngine());
   return elkPromise;
 }
 
@@ -622,27 +618,7 @@ export function createFlowGraph(document: WorkflowDocument, positions: CanvasPos
 export async function autoLayoutFlow(document: WorkflowDocument): Promise<CanvasPositions> {
   const elk = await getElk();
   const flow = createFlowGraph(document);
-  const layout = await elk.layout({
-    id: 'workflow-layout',
-    children: flow.nodes.map((node) => ({
-      id: node.id,
-      width: node.type === 'port' ? FLOW_PORT_WIDTH : FLOW_NODE_WIDTH,
-      height: node.type === 'port' ? FLOW_PORT_HEIGHT : FLOW_NODE_HEIGHT,
-    })),
-    edges: flow.edges.map((edge) => ({ id: edge.id, sources: [edge.source], targets: [edge.target] })),
-    layoutOptions: {
-      'elk.algorithm': 'layered',
-      'elk.direction': 'DOWN',
-      'elk.edgeRouting': 'ORTHOGONAL',
-      'elk.spacing.nodeNode': '28',
-      'elk.layered.spacing.nodeNodeBetweenLayers': '54',
-      'elk.layered.spacing.edgeNodeBetweenLayers': '26',
-      'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
-      'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
-      'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
-      'elk.padding': '[top=24,left=24,bottom=24,right=24]',
-    },
-  });
+  const layout = await elk.layout(createLayoutGraph(flow));
 
   return Object.fromEntries(
     (layout.children || []).map((node): [string, CanvasPosition] => [

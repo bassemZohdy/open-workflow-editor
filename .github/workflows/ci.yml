@@ -30,6 +30,9 @@ jobs:
       - name: Security audit
         run: npm audit --audit-level=high
 
+      - name: Verify compiled layout engine provenance
+        run: npm run layout:verify
+
       - name: Lint
         run: npm run lint
 

@@ -4,6 +4,8 @@ The editor ships a set of IDE-level ergonomics so authoring Open Workflow defini
 
 Primary implementation: `main.tsx` (wiring & global shortcuts) and the `src/components/layout/` components referenced below.
 
+Auto layout keeps its existing ELK layered profile and canvas behavior. The lazy engine now uses a pinned compiler build with upstream layout parity checks; see [layout engine maintenance](layout-engine.md).
+
 ---
 
 ## 1. Code editor (Specification view)

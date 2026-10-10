@@ -1047,13 +1047,13 @@ button:focus-visible,
   font-size: 11px;
 }
 .runtime-demo-note span {
-  color: #6f9385;
+  color: #4f6d5f;
 }
 .runtime-pace-control {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: #6f9385;
+  color: #4f6d5f;
   font-size: 9px;
   font-weight: 700;
   white-space: nowrap;
