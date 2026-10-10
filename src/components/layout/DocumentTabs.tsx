@@ -65,8 +65,8 @@ export function DocumentTabs({
   };
 
   return (
-    <div className="document-tabs-bar" role="tablist" aria-label="Open workflow documents">
-      <div className="document-tabs-list">
+    <div className="document-tabs-bar">
+      <div className="document-tabs-list" role="tablist" aria-label="Open workflow documents">
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
           const isDropTarget = dropTargetId === tab.id && draggingId !== null && draggingId !== tab.id;
@@ -119,16 +119,16 @@ export function DocumentTabs({
             </div>
           );
         })}
-        <button
-          type="button"
-          className="document-tab-add"
-          aria-label="New workflow tab"
-          onClick={onNewTab}
-          title="New workflow (+)"
-        >
-          ＋
-        </button>
       </div>
+      <button
+        type="button"
+        className="document-tab-add"
+        aria-label="New workflow tab"
+        onClick={onNewTab}
+        title="New workflow (+)"
+      >
+        ＋
+      </button>
       <div className="document-tabs-actions">
         {onOpenFile && (
           <button

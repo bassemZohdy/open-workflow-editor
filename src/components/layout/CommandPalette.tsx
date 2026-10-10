@@ -153,7 +153,7 @@ export function CommandPalette({ open, onClose, commands }: CommandPaletteProps)
           />
           <span className="palette-cancel">Esc</span>
         </div>
-        <div className="palette-list" ref={listRef} role="listbox" key={query}>
+        <div className="palette-list" ref={listRef} role="listbox" aria-label="Commands" key={query}>
           {sectioned.length === 0 && <div className="palette-empty">No matching commands</div>}
           {sectioned.map((entry) => {
             if (entry.kind === 'header') {
