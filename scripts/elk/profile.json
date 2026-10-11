@@ -1,0 +1,12 @@
+{
+  "elk.algorithm": "layered",
+  "elk.direction": "DOWN",
+  "elk.edgeRouting": "ORTHOGONAL",
+  "elk.spacing.nodeNode": "28",
+  "elk.layered.spacing.nodeNodeBetweenLayers": "54",
+  "elk.layered.spacing.edgeNodeBetweenLayers": "26",
+  "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
+  "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
+  "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
+  "elk.padding": "[top=24,left=24,bottom=24,right=24]"
+}

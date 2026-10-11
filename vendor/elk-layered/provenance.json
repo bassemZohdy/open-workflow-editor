@@ -1,0 +1,25 @@
+{
+  "version": "0.12.0",
+  "sources": {
+    "elkjs": {
+      "url": "https://github.com/kieler/elkjs.git",
+      "commit": "ff5771d7165445c42c408bb8a090c8035272218c"
+    },
+    "elk": {
+      "url": "https://github.com/eclipse-elk/elk.git",
+      "commit": "323312916048544e4e594eab3303cdb0d01e2929"
+    }
+  },
+  "compiler": {
+    "java": 17,
+    "gradle": "7.6.4",
+    "gwt": "2.11.0",
+    "melk": "0.12.0"
+  },
+  "artifactSha256": "2ae5e1499850cf935b0a597b751617ad3b0cc3377184a3bd4aec8400683f8040",
+  "recipeSha256": {
+    "scripts/build-elk-layered.mjs": "568ce1abf2e500b73caac3815fae1aff8f0580bf4e347c765db5b2948a735e86",
+    "scripts/elk/ElkJs.java": "d501150ac2d956f4906ba6c260f6d3109f1838aea0dc391698e94987901c9d1c",
+    "scripts/elk/profile.json": "6041b7eadb023a950bd76bbacf9a768bb505bf4c0ccde946b0a6fa22483fd9fc"
+  }
+}

@@ -1,7 +1,10 @@
 dist
 node_modules
+coverage
 package-lock.json
 test-results
 playwright-report
 .playwright-mcp
 .claude
+vendor/elk-layered/elk-worker.cjs
+vendor/elk-layered/LICENSE.md

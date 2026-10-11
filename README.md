@@ -86,6 +86,7 @@ npm run build
 
 ## Documentation Index
 
+- [`docs/layout-engine.md`](docs/layout-engine.md): Pinned ELK compiler profile, layout parity tests, provenance and rebuild instructions.
 - [`CHANGELOG.md`](CHANGELOG.md): Notable changes per release (Keep-a-Changelog format).
 - [`TODO.md`](TODO.md): Task board, roadmap, and review findings.
 - [`DESIGN.md`](DESIGN.md): Design tokens, typography, layout grid, elevation, and component specs.

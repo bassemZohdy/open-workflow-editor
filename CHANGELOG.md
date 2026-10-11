@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Task 135:** Restore the aggregate 500 kB JavaScript budget with a pinned ELK layered compiler profile and lightweight canvas adapter. Preserve layout behavior with upstream parity tests and verify source/artifact provenance during CI and builds.
+- Correct contrast for the runtime demo description and pace label discovered by the full browser regression run.
+
 AI component registry (Tasks 105–108), code-review hardening (Tasks 109–118), controller foundation (Task 71), dependency pinning (Tasks 99–100), migration kit (Task 108). Suite: **207 unit / 71 E2E**.
 
 ### Added
