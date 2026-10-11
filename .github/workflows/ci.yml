@@ -11,8 +11,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # These names match main's existing required status checks.
   quality:
-    name: Lint, format, types, unit, build
+    name: quality
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -63,7 +64,7 @@ jobs:
           if-no-files-found: error
 
   browser:
-    name: Playwright browser tests
+    name: browser
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
